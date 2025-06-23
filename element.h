@@ -1,6 +1,6 @@
 #pragma once
 #include "constants.h"
-#include "scalar.h"
+#include "macro.h"
 
 class Element {
 public:
@@ -10,4 +10,5 @@ public:
 private:
   DataType u_consrv[NSP];
   DataType u_grad_consrv[NSP];
+  DataType x[NSP];
 };

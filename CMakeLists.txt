@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(1d_dg_fr)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+endif()
 add_executable(main main.cpp)
 target_compile_definitions(main PRIVATE USE_DOUBLE_PRECISION=1)
