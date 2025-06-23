@@ -4,8 +4,11 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-struct SolverConfig {
-  DataType x0;
-  DataType x1;
-  int n_ele;
+struct SolverConfig
+{
+    DataType x0;
+    DataType x1;
+    int n_ele;
+    DataType dt;
+    int n_dt;
 };

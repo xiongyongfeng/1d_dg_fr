@@ -1,26 +1,35 @@
-#include "constants.h"
-#include "element.h"
-#include "parser.h"
-#include "solver_config.h"
+#include "base/constants.h"
+#include "base/element.h"
+#include "base/parser.h"
+#include "base/solver_config.h"
+#include "solver/solver.h"
 #include <cstdlib>
 #include <iostream>
-int main(int argc, char **argv) {
-  std::cout << "running command: ";
-  for (int i = 0; i < argc; i++) {
-    std::cout << argv[i] << " ";
-  }
-  std::cout << std::endl;
-  if (argc < 1) {
-    std::cout << "usage: exe *.json" << std::endl;
-    exit(-1);
-  }
+int main(int argc, char **argv)
+{
+    std::cout << "running command: ";
+    for (int i = 0; i < argc; i++)
+    {
+        std::cout << argv[i] << " ";
+    }
+    std::cout << std::endl;
+    if (argc < 1)
+    {
+        std::cout << "usage: exe *.json" << std::endl;
+        exit(-1);
+    }
+    SolverConfig solver_config = nlohmann::loadConfig(argv[1]);
+    Element *elem_pool = new Element[solver_config.n_ele];
 
-  Element ele;
+    Solver solver(solver_config, elem_pool);
 
-  SolverConfig config = nlohmann::loadConfig(argv[1]);
+    solver.Initialization();
+    solver.Compute();
 
-  // 保存修改后的配置
-  nlohmann::saveConfig(config, "config_updated.json");
+    std::string filename("result.csv");
+    solver.Output(filename);
 
-  return 0;
+    delete[] elem_pool;
+    std::cout << "Finish Computation!" << std::endl;
+    return 0;
 }
