@@ -4,7 +4,8 @@
 
 struct Element
 {
+    DataType x[NSP];
     DataType u_consrv[NSP];
     DataType u_grad_consrv[NSP];
-    DataType x[NSP];
+    DataType rhs[NSP];
 };
