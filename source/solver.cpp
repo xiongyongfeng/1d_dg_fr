@@ -11,24 +11,36 @@ void Solver::Initialization()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
+        // for (int isp = 0; isp < NSP; isp++)
+        // {
+        //     DataType dx = (config.x1 - config.x0) / config.n_ele;
+        //     elem_pool[iele].x[isp] =
+        //         config.x0 + iele * dx + isp * dx / (NSP - 1);
+        //     if (elem_pool[iele].x[isp] < DataType(0.25))
+        //     {
+        //         elem_pool[iele].u_consrv[isp] = DataType(0.0);
+        //     }
+        //     else if (elem_pool[iele].x[isp] > DataType(0.75))
+        //     {
+        //         elem_pool[iele].u_consrv[isp] = DataType(0.0);
+        //     }
+        //     else
+        //     {
+        //         elem_pool[iele].u_consrv[isp] = DataType(1.0);
+        //     }
+        // }
+
         for (int isp = 0; isp < NSP; isp++)
         {
             DataType dx = (config.x1 - config.x0) / config.n_ele;
             elem_pool[iele].x[isp] =
                 config.x0 + iele * dx + isp * dx / (NSP - 1);
-            if (elem_pool[iele].x[isp] < DataType(0.25))
-            {
-                elem_pool[iele].u_consrv[isp] = DataType(1.0);
-            }
-            else if (elem_pool[iele].x[isp] > DataType(0.75))
-            {
-                elem_pool[iele].u_consrv[isp] = DataType(1.0);
-            }
-            else
-            {
-                elem_pool[iele].u_consrv[isp] = DataType(1.0);
-            }
+
+            elem_pool[iele].u_consrv[isp] =
+                std::sin(2.0 * 3.1415926 * elem_pool[iele].x[isp]);
         }
+
+        computeElementGrad(iele);
     }
 };
 void Solver::computeRhs()
@@ -53,26 +65,26 @@ void Solver::computeRhs()
             flux_tmp[isp] = flux->computeFlux(element.u_consrv[isp]);
         }
 
-        DataType element_flux[NSP]{};
+        DataType rhs_prediction[NSP]{};
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                element_flux[isp] +=
+                rhs_prediction[isp] +=
                     getSMatrix<DataType, ORDER>()[jsp][isp] * flux_tmp[jsp];
             }
 
-            rhs_tmp[isp] -= element_flux[isp];
+            rhs_tmp[isp] += rhs_prediction[isp];
         }
 
         // at  j - 1/2
-        DataType flux_j_left = flux->computeRiemannFlux(
+        DataType rhs_common_flux_left = flux->computeRiemannFlux(
             element_l.u_consrv[ORDER], element.u_consrv[0]);
         // at j+1/2
-        DataType flux_j_right = flux->computeRiemannFlux(
+        DataType rhs_common_flux_right = flux->computeRiemannFlux(
             element.u_consrv[ORDER], element_r.u_consrv[0]);
-        rhs_tmp[0] += flux_j_left;
-        rhs_tmp[ORDER] -= flux_j_right;
+        rhs_tmp[0] += rhs_common_flux_left;
+        rhs_tmp[ORDER] -= rhs_common_flux_right;
 
         for (int isp = 0; isp < NSP; isp++)
         {
@@ -100,17 +112,25 @@ void Solver::timeRK1()
             element.u_consrv[isp] += element.rhs[isp] * config.dt;
         }
 
-        for (int isp = 0; isp < NSP; isp++)
+        computeElementGrad(iele);
+    }
+}
+
+void Solver::computeElementGrad(int ielem)
+{
+    Element &element = elem_pool[ielem];
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        element.u_grad_consrv[isp] = DataType(0);
+        for (int jsp = 0; jsp < NSP; jsp++)
         {
-            for (int jsp = 0; jsp < NSP; jsp++)
-            {
-                element.u_grad_consrv[isp] =
-                    getDMatrix<DataType, ORDER>()[isp][jsp] *
-                    element.u_consrv[jsp];
-            }
+            element.u_grad_consrv[isp] +=
+                getDMatrix<DataType, ORDER>()[isp][jsp] * element.u_consrv[jsp];
         }
     }
 }
+
 void Solver::Output(const std::string &filename)
 {
     if (std::filesystem::exists(filename))

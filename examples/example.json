@@ -3,8 +3,8 @@
   "x0": 0.0,
   "n_ele": 100,
   "dt": 0.001,
-  "n_dt": 10,
-  "out_time_step": 1,
+  "n_dt": 1000,
+  "out_time_step": 100,
   "a": 1.0,
   "output_dir": "./soln"
 }

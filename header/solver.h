@@ -20,4 +20,5 @@ class Solver
     void timeRK1();
     void timeRK3();
     void Output(const std::string &);
+    void computeElementGrad(int ielem);
 };
