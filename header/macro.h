@@ -1,7 +1,8 @@
 #pragma once
+#include <iostream>
 
-#define ORDER 1
-#define NSP (ORDER + 1)
+constexpr size_t ORDER = 1;
+constexpr size_t NSP = ORDER + 1;
 
 #if USE_DOUBLE_PRECISION
 using DataType = double; // 双精度类型

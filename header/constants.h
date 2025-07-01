@@ -65,6 +65,48 @@ constexpr auto getMMatrix()
     }
 };
 
+template <typename T, size_t ORDER>
+constexpr auto
+invertMatrix(const std::array<std::array<T, ORDER + 1>, ORDER + 1> &mat)
+{
+    static_assert(ORDER <= 3 && ORDER >= 1, "Unsupported ORDER");
+    using MatrixType = std::array<std::array<T, ORDER + 1>, ORDER + 1>;
+    MatrixType invMat{};
+
+    if constexpr (ORDER == 1)
+    {
+        // --- 1阶矩阵求逆公式 ---
+        T det = mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0];
+        if (det == 0)
+            throw std::invalid_argument("Matrix is singular");
+
+        T invDet = T(1) / det;
+        invMat = {{{mat[1][1] * invDet, -mat[0][1] * invDet},
+                   {-mat[1][0] * invDet, mat[0][0] * invDet}}};
+    }
+    else if constexpr (ORDER == 2)
+    {
+        // --- 2阶矩阵求逆公式 ---
+        T det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) -
+                mat[0][1] * (mat[1][0] * mat[2][2] - mat[1][2] * mat[2][0]) +
+                mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
+        if (det == 0)
+            throw std::invalid_argument("Matrix is singular");
+
+        T invDet = T(1) / det;
+        invMat = {{{(mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) * invDet,
+                    (mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2]) * invDet,
+                    (mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1]) * invDet},
+                   {(mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2]) * invDet,
+                    (mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0]) * invDet,
+                    (mat[0][2] * mat[1][0] - mat[0][0] * mat[1][2]) * invDet},
+                   {(mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]) * invDet,
+                    (mat[0][1] * mat[2][0] - mat[0][0] * mat[2][1]) * invDet,
+                    (mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0]) * invDet}}};
+    }
+    return invMat;
+}
+
 // Difference Matrix
 // D_{ij} =  \partial l_j / \partial \xi at \xi_i
 template <typename T, size_t ORDER>

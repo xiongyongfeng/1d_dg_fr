@@ -4,11 +4,14 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-struct SolverConfig
+struct Config
 {
     DataType x0;
     DataType x1;
     int n_ele;
     DataType dt;
     int n_dt;
+    int out_time_step;
+    DataType a; // linear advection coef
+    std::string output_dir;
 };
