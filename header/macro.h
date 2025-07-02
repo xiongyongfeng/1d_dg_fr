@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 
-constexpr size_t ORDER = 1;
+constexpr size_t ORDER = 2;
 constexpr size_t NSP = ORDER + 1;
 
 #if USE_DOUBLE_PRECISION

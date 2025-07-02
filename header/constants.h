@@ -57,8 +57,9 @@ constexpr auto getMMatrix()
     }
     else if constexpr (ORDER == 2)
     {
-        return MatrixType{ArrayType{0, 1, 2}, ArrayType{3, 4, 5},
-                          ArrayType{6, 7, 8}};
+        return MatrixType{ArrayType{0.26666667, 0.13333333, -0.06666667},
+                          ArrayType{0.13333333, 1.06666667, 0.13333333},
+                          ArrayType{-0.06666667, 0.13333333, 0.26666667}};
     }
     else
     {
@@ -149,8 +150,10 @@ constexpr auto getSMatrix()
     }
     else if constexpr (ORDER == 2)
     {
-        return MatrixType{ArrayType{0, 1, 2}, ArrayType{3, 4, 5},
-                          ArrayType{6, 7, 8}};
+        return MatrixType{
+            ArrayType{-5.00000000e-01, 6.66666667e-01, -1.66666667e-01},
+            ArrayType{-6.66666667e-01, -5.55111512e-17, 6.66666667e-01},
+            ArrayType{1.66666667e-01, -6.66666667e-01, 5.00000000e-01}};
     }
     else
     {
