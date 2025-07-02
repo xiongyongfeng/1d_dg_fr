@@ -4,6 +4,7 @@
 #include "macro.h"
 #include "parser.h"
 #include "solver.h"
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -44,26 +45,28 @@ int main(int argc, char **argv)
         exit(-1);
     }
     Config config = nlohmann::loadConfig(argv[1]);
-    Element *elem_pool = new Element[config.n_ele];
-
-    Solver solver(config, elem_pool);
+    Solver solver(config, config.n_ele);
 
     solver.Initialization();
 
-    for (int ntime = 0; ntime < config.n_dt; ntime++)
+    DataType current_time = 0;
+    while (current_time <= config.total_time)
     {
-        solver.computeRhs();
-
-        if (ntime % config.out_time_step == 0)
+        if (static_cast<int>(std::round(current_time / config.dt)) %
+                static_cast<int>(
+                    std::round(config.output_time_step / config.dt)) ==
+            0)
         {
             ensurePathExists(config.output_dir);
-            std::string filename =
-                config.output_dir + "/result_" + std::to_string(ntime) + ".csv";
+            std::string filename = config.output_dir + "/result_" +
+                                   std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;
             solver.Output(filename);
         }
 
-        solver.timeRK1();
+        solver.timeRK3();
+
+        current_time += config.dt;
     }
 
     ///////////////////////////////
@@ -78,8 +81,6 @@ int main(int argc, char **argv)
     // }
 
     //////////////////////////////
-
-    delete[] elem_pool;
     std::cout << "Finish Computation!" << std::endl;
     return 0;
 }

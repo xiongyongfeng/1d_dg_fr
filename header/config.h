@@ -10,8 +10,8 @@ struct Config
     DataType x1;
     int n_ele;
     DataType dt;
-    int n_dt;
-    int out_time_step;
+    DataType total_time;
+    DataType output_time_step;
     DataType a; // linear advection coef
     std::string output_dir;
 };

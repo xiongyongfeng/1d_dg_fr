@@ -19,7 +19,7 @@ for filename in os.listdir(input_dir):
     if filename.endswith('.csv'):
         # 构造完整文件路径
         csv_path = os.path.join(input_dir, filename)
-        
+        print(f"processing file {csv_path}")
         # 创建图形和坐标轴
         plt.figure(figsize=(10, 6))
         ax = plt.gca()
@@ -29,7 +29,7 @@ for filename in os.listdir(input_dir):
             csvreader = csv.reader(csvfile)
             for row in csvreader:
                 # 过滤空行并确保有6个数据点
-                if len(row) < 6: 
+                if len(row) < 4: 
                     continue
                 
                 # 提取前4个坐标值（忽略最后2个）
