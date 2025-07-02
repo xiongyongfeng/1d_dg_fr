@@ -24,7 +24,7 @@ class LinearAdvectionDiffusionFlux : public Flux
 class BurgersFlux : public Flux
 {
   public:
-    double computeRiemannFlux(double uL, double uR) const override;
+    DataType computeRiemannFlux(DataType uL, DataType uR) const override;
 
     DataType computeFlux(DataType u) const override
     {
