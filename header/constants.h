@@ -33,7 +33,8 @@ constexpr auto getLGLWeights()
     }
     else if constexpr (ORDER == 2)
     {
-        return std::array<T, ORDER + 1>{T(-1), T(0), T(1)};
+        return std::array<T, ORDER + 1>{
+            T(1.0) / T(3.0), T(1.3333333333333333334), T(1.0) / T(3.0)};
     }
     else
     {

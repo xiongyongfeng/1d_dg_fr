@@ -22,7 +22,7 @@ file(GLOB_RECURSE EXCLUDE_FILES
 # 从主列表中移除排除文件
 list(REMOVE_ITEM SOURCE_FILES ${EXCLUDE_FILES})
 add_executable(${TARGET_NAME} ${SOURCE_FILES})
-target_compile_definitions(${TARGET_NAME} PRIVATE USE_DOUBLE_PRECISION=1)
+# target_compile_definitions(${TARGET_NAME} PRIVATE USE_DOUBLE_PRECISION=1)
 target_include_directories(${TARGET_NAME}
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/header
