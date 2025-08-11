@@ -48,25 +48,51 @@ int main(int argc, char **argv)
     Solver solver(config, config.n_ele);
 
     solver.Initialization();
-
     DataType current_time = 0;
+
+    if (static_cast<int>(std::round(current_time / config.dt)) %
+            static_cast<int>(std::round(config.output_time_step / config.dt)) ==
+        0)
+    {
+        ensurePathExists(config.output_dir);
+        std::string filename =
+            config.output_dir + "/init" + std::to_string(current_time) + ".csv";
+        std::cout << "output file: " << filename << std::endl;
+        solver.Output(filename);
+    }
+
     while (current_time <= config.total_time)
     {
+
+        // solver.timeRK3();
+        solver.timeRK1();
+        current_time += config.dt;
+
         if (static_cast<int>(std::round(current_time / config.dt)) %
                 static_cast<int>(
                     std::round(config.output_time_step / config.dt)) ==
             0)
         {
             ensurePathExists(config.output_dir);
-            std::string filename = config.output_dir + "/result_" +
+            std::string filename = config.output_dir + "/result_before" +
                                    std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;
             solver.Output(filename);
         }
 
-        solver.timeRK3();
+        solver.TvdLimiter();
 
-        current_time += config.dt;
+        if (static_cast<int>(std::round(current_time / config.dt)) %
+                static_cast<int>(
+                    std::round(config.output_time_step / config.dt)) ==
+            0)
+        {
+            ensurePathExists(config.output_dir);
+            std::string filename = config.output_dir + "/result_after" +
+                                   std::to_string(current_time) + ".csv";
+            std::cout << "output file: " << filename << std::endl;
+            solver.Output(filename);
+        }
     }
 
     ///////////////////////////////

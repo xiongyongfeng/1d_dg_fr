@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 #include "element.h"
+#include "macro.h"
 class Solver
 {
   private:
@@ -33,6 +34,10 @@ class Solver
     void timeRK1();
     void timeRK2();
     void timeRK3();
+    void TvdLimiter();
+    std::pair<DataType, int> Minmod(DataType a, DataType b, DataType c);
     void Output(const std::string &);
     void computeElementGrad(int ielem);
+    void ComputeElementAvg(int ielem);
+    void Post();
 };

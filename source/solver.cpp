@@ -4,13 +4,16 @@
 #include "flux.h"
 #include "macro.h"
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <valarray>
 
 void Solver::Initialization()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
+        Element &elem = elem_pool_old[iele];
         for (int isp = 0; isp < NSP; isp++)
         {
             DataType dx = (config.x1 - config.x0) / config.n_ele;
@@ -18,15 +21,15 @@ void Solver::Initialization()
                 config.x0 + iele * dx + isp * dx / (NSP - 1);
             if (geom_pool[iele].x[isp] < DataType(0.25))
             {
-                elem_pool_old[iele].u_consrv[isp] = DataType(0.0);
+                elem.u_consrv[isp] = DataType(0.0);
             }
             else if (geom_pool[iele].x[isp] > DataType(0.75))
             {
-                elem_pool_old[iele].u_consrv[isp] = DataType(0.0);
+                elem.u_consrv[isp] = DataType(0.0);
             }
             else
             {
-                elem_pool_old[iele].u_consrv[isp] = DataType(1.0);
+                elem.u_consrv[isp] = DataType(1.0);
             }
         }
 
@@ -41,6 +44,7 @@ void Solver::Initialization()
         // }
 
         computeElementGrad(iele);
+        ComputeElementAvg(iele);
     }
 };
 void Solver::computeElemRhs(Rhs *rhs_pool, Element *elem_pool, int iele)
@@ -99,7 +103,6 @@ void Solver::computeRhs(Rhs *rhs_pool, Element *elem_pool)
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         // set rhs=0
-
         computeElemRhs(rhs_pool, elem_pool, iele);
     }
     return;
@@ -117,6 +120,85 @@ void Solver::timeRK1()
             elem_pool_old[iele].u_consrv[isp] +=
                 rhs_pool_tmp[iele].rhs[isp] * config.dt;
         }
+    }
+}
+
+void Solver::Post()
+{
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        ComputeElementAvg(iele);
+        computeElementGrad(iele);
+    }
+    return;
+}
+
+std::pair<DataType, int> Solver::Minmod(DataType a, DataType b, DataType c)
+{
+    // 检查所有参数是否同号
+    if (a > -1e-6 && a < 1e-6)
+        return {DataType(a), 0};
+    ;
+
+    const bool all_nonneg = (a >= 0) && (b >= 0) && (c >= 0);
+    const bool all_nonpos = (a <= 0) && (b <= 0) && (c <= 0);
+
+    // 符号不一致时激活 Limiter
+    if (!(all_nonneg || all_nonpos))
+    {
+        return {DataType(0), 1}; // 返回 0 且标记 Limiter 激活
+    }
+
+    // 同号时选择绝对值最小的参数
+    const DataType min_abs = std::min({std::abs(a), std::abs(b), std::abs(c)});
+    const DataType result = (a > 0) ? min_abs : -min_abs;
+
+    // 检查是否实际应用了 Limiter（是否返回了非原始输入值）
+    const bool limiter_activated = (std::abs(result - a) > 1e-5 ? 1 : 0);
+    return {result, limiter_activated};
+}
+
+void Solver::TvdLimiter()
+{
+    Post();
+
+    bool islimited[config.n_ele];
+    DataType c1[config.n_ele];
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        Element &element = elem_pool_old[iele];
+        DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
+        Element &element_l =
+            elem_pool_old[(iele - 1 + config.n_ele) % config.n_ele];
+        Element &element_r =
+            elem_pool_old[(iele + 1 + config.n_ele) % config.n_ele];
+        std::pair<DataType, int> c1p = Minmod(
+            element.u_consrv[1] - element.u_avg,
+            element_r.u_avg - element.u_avg, element.u_avg - element_l.u_avg);
+        std::pair<DataType, int> c1m = Minmod(
+            -element.u_consrv[0] + element.u_avg,
+            element_r.u_avg - element.u_avg, element.u_avg - element_l.u_avg);
+        // std::cout << "iele = " << iele << ", islimited = " << c1p.second << "
+        // "
+        //           << c1m.second << " " << c1p.first << " " << c1m.first
+        //           << std::endl;
+        // printf("a=%f,b=%f,c=%f\n", element.u_consrv[1] - element.u_avg,
+        //        element_r.u_avg - element.u_avg,
+        //        element.u_avg - element_l.u_avg);
+        c1[iele] = DataType(0.5) * (c1p.first + c1m.first);
+        element.islimited = c1p.second + c1m.second;
+    }
+
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        Element &element = elem_pool_old[iele];
+        if (element.islimited > 0)
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                element.u_consrv[isp] =
+                    element.u_avg +
+                    c1[iele] * getLGLPoints<DataType, ORDER>()[isp];
+            }
     }
 }
 
@@ -205,6 +287,18 @@ void Solver::computeElementGrad(int ielem)
         }
     }
 }
+void Solver::ComputeElementAvg(int ielem)
+{
+    Element &element = elem_pool_old[ielem];
+
+    element.u_avg = DataType(0);
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        element.u_avg +=
+            getLGLWeights<DataType, ORDER>()[isp] * element.u_consrv[isp];
+    }
+    element.u_avg /= DataType(2.0);
+}
 
 void Solver::Output(const std::string &filename)
 {
@@ -230,6 +324,7 @@ void Solver::Output(const std::string &filename)
         {
             ofile << elem_pool_old[iele].u_consrv[isp] << ",";
         }
+        ofile << elem_pool_old[iele].islimited << ",";
         ofile << std::endl;
     }
     return;

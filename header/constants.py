@@ -105,7 +105,7 @@ def generate_lagrange_basis(points):
     
     return basis_functions
 
-n = 2
+n = 1
 nsp = n+1
 x_lgl, w_lgl = lgl_nodes_weights(n)
 print(x_lgl)

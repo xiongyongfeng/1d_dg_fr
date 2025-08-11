@@ -34,9 +34,12 @@ for filename in os.listdir(input_dir):
                 
                 # 提取前4个坐标值（忽略最后2个）
                 x0, x1, y0, y1 = map(float, row[:4])
+                flag = float(row[4])
+                print(flag)
+                line_color = 'red' if flag > 0 else 'blue'
                 
                 # 绘制线段
-                plt.plot([x0, x1], [y0, y1], 'b-', linewidth=1.5, marker='o')
+                plt.plot([x0, x1], [y0, y1], 'b-', linewidth=1.5, marker='o',color=line_color)
         
         # 设置图形属性
         plt.title(f'Segment Visualization: {filename}', fontsize=14)  # 使用文件名作为标题
