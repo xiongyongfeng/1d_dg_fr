@@ -23,7 +23,14 @@ void ensurePathExists(const fs::path &output_dir)
             {
                 std::cout << "已创建目录: " << output_dir << std::endl;
             }
-        } // 若目录已存在则无需操作
+        }
+        else
+        {
+
+            std::cerr << "\nError: Directory " << output_dir
+                      << " already exists.\n";
+            exit(EXIT_FAILURE);
+        }
     }
     catch (const fs::filesystem_error &e)
     {
@@ -45,6 +52,7 @@ int main(int argc, char **argv)
         exit(-1);
     }
     Config config = nlohmann::loadConfig(argv[1]);
+    ensurePathExists(config.output_dir);
     Solver solver(config, config.n_ele);
 
     solver.Initialization();
@@ -54,7 +62,6 @@ int main(int argc, char **argv)
             static_cast<int>(std::round(config.output_time_step / config.dt)) ==
         0)
     {
-        ensurePathExists(config.output_dir);
         std::string filename =
             config.output_dir + "/init" + std::to_string(current_time) + ".csv";
         std::cout << "output file: " << filename << std::endl;
@@ -73,21 +80,22 @@ int main(int argc, char **argv)
                     std::round(config.output_time_step / config.dt)) ==
             0)
         {
-            ensurePathExists(config.output_dir);
             std::string filename = config.output_dir + "/result_before" +
                                    std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;
             solver.Output(filename);
         }
 
-        solver.TvdLimiter();
+        if (config.limiter_type == 1)
+        {
+            solver.TvdLimiter();
+        }
 
         if (static_cast<int>(std::round(current_time / config.dt)) %
                 static_cast<int>(
                     std::round(config.output_time_step / config.dt)) ==
             0)
         {
-            ensurePathExists(config.output_dir);
             std::string filename = config.output_dir + "/result_after" +
                                    std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;

@@ -21,15 +21,15 @@ void Solver::Initialization()
                 config.x0 + iele * dx + isp * dx / (NSP - 1);
             if (geom_pool[iele].x[isp] < DataType(0.25))
             {
-                elem.u_consrv[isp] = DataType(0.0);
+                elem.u_consrv[isp] = DataType(10.0);
             }
             else if (geom_pool[iele].x[isp] > DataType(0.75))
             {
-                elem.u_consrv[isp] = DataType(0.0);
+                elem.u_consrv[isp] = DataType(10.0);
             }
             else
             {
-                elem.u_consrv[isp] = DataType(1.0);
+                elem.u_consrv[isp] = DataType(11.0);
             }
         }
 
@@ -47,7 +47,7 @@ void Solver::Initialization()
         ComputeElementAvg(iele);
     }
 };
-void Solver::computeElemRhs(Rhs *rhs_pool, Element *elem_pool, int iele)
+void Solver::computeElemRhsDG(Rhs *rhs_pool, Element *elem_pool, int iele)
 {
     Element &element = elem_pool[iele];
     DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
@@ -98,12 +98,75 @@ void Solver::computeElemRhs(Rhs *rhs_pool, Element *elem_pool, int iele)
         }
     }
 }
+
+void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
+{
+    Element &element = elem_pool[iele];
+    DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
+    DataType local_det_jac = hj / DataType(2.0);
+    Element &element_l = elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+    Element &element_r = elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+
+    Flux *flux = new LinearAdvectionDiffusionFlux(config.a);
+    DataType flux_tmp[NSP]{};
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        flux_tmp[isp] = flux->computeFlux(element.u_consrv[isp]);
+    }
+
+    DataType rhs_prediction[NSP]{};
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int jsp = 0; jsp < NSP; jsp++)
+        {
+            rhs_prediction[isp] -= getDMatrix<DataType, ORDER>()[isp][jsp] *
+                                   flux_tmp[jsp] / local_det_jac;
+        }
+    }
+
+    // at  j - 1/2
+    DataType common_flux_left = flux->computeRiemannFlux(
+        element_l.u_consrv[ORDER], element.u_consrv[0]);
+    // at j+1/2
+    DataType common_flux_right = flux->computeRiemannFlux(
+        element.u_consrv[ORDER], element_r.u_consrv[0]);
+
+    DataType rhs_correction[NSP]{};
+
+    DataType flux_tmp2[NSP]{};
+    flux_tmp2[0] = -1.0 * (common_flux_left - flux_tmp[0]);
+    flux_tmp2[ORDER] = 1.0 * (common_flux_right - flux_tmp[ORDER]);
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int jsp = 0; jsp < NSP; jsp++)
+        {
+            rhs_correction[isp] -=
+                invertMatrix<DataType, ORDER>(
+                    getMMatrix<DataType, ORDER>())[isp][jsp] *
+                flux_tmp2[jsp] / local_det_jac;
+        }
+    }
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        rhs_pool[iele].rhs[isp] = DataType(0.0);
+        rhs_pool[iele].rhs[isp] += rhs_prediction[isp] + rhs_correction[isp];
+    }
+}
 void Solver::computeRhs(Rhs *rhs_pool, Element *elem_pool)
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         // set rhs=0
-        computeElemRhs(rhs_pool, elem_pool, iele);
+        if (config.dg_fr_type == 0)
+        {
+            computeElemRhsDG(rhs_pool, elem_pool, iele);
+        }
+        else if (config.dg_fr_type == 1)
+        {
+            computeElemRhsFR(rhs_pool, elem_pool, iele);
+        }
     }
     return;
 };

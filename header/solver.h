@@ -30,7 +30,8 @@ class Solver
 
     void Initialization();
     void computeRhs(Rhs *, Element *);
-    void computeElemRhs(Rhs *, Element *, int);
+    void computeElemRhsDG(Rhs *, Element *, int);
+    void computeElemRhsFR(Rhs *, Element *, int);
     void timeRK1();
     void timeRK2();
     void timeRK3();

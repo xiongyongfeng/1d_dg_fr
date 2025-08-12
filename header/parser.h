@@ -19,7 +19,9 @@ struct adl_serializer<Config>
                  {"total_time", c.total_time},
                  {"output_time_step", c.output_time_step},
                  {"a", c.a},
-                 {"output_dir", c.output_dir}};
+                 {"output_dir", c.output_dir},
+                 {"limiter_type", c.limiter_type},
+                 {"dg_fr_type", c.dg_fr_type}};
     }
     static void from_json(const json &j, Config &c)
     {
@@ -31,6 +33,16 @@ struct adl_serializer<Config>
         j.at("output_time_step").get_to(c.output_time_step);
         j.at("a").get_to(c.a);
         j.at("output_dir").get_to(c.output_dir);
+        auto it = j.find("limiter_type");
+        if (it != j.end())
+        {
+            it->get_to(c.limiter_type);
+        }
+        auto itt = j.find("dg_fr_type");
+        if (itt != j.end())
+        {
+            itt->get_to(c.dg_fr_type);
+        }
     }
 };
 

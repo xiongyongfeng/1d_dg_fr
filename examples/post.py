@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime  # 用于添加时间戳（可选）
 
 # 设置输入和输出目录
-input_dir = './soln'  # 替换为你的CSV文件夹路径
-output_dir = './soln_png'  # 替换为输出文件夹路径
+input_dir = './soln_fr'  # 替换为你的CSV文件夹路径
+output_dir =  input_dir + '_png'
 
 # 确保输出目录存在
 if not os.path.exists(output_dir):
@@ -35,7 +35,6 @@ for filename in os.listdir(input_dir):
                 # 提取前4个坐标值（忽略最后2个）
                 x0, x1, y0, y1 = map(float, row[:4])
                 flag = float(row[4])
-                print(flag)
                 line_color = 'red' if flag > 0 else 'blue'
                 
                 # 绘制线段
