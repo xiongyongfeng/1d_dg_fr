@@ -10,13 +10,13 @@ struct Geom
 
 struct Element
 {
-    DataType u_consrv[NSP];
-    DataType u_avg;
-    DataType u_grad_consrv[NSP];
-    int32_t islimited;
+    DataType u_consrv[NSP][NCONSRV];
+    DataType u_avg[NCONSRV];
+    DataType u_grad_consrv[NSP][NCONSRV];
+    int32_t islimited[NCONSRV];
 };
 
 struct Rhs
 {
-    DataType rhs[NSP];
+    DataType rhs[NSP][NCONSRV];
 };

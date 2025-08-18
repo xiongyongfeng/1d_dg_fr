@@ -5,40 +5,47 @@ set(CMAKE_CXX_EXTENSIONS OFF) # 禁用编译器特有扩展（如 GNU 的 -std=g
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(1d_dg_fr)
 
-set(TARGET_NAME main)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif()
+
+set(TARGET_NAME main_ns)
+set(TARGET_LAD main_lad)
+
 
 file(GLOB_RECURSE SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 file(GLOB_RECURSE EXCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/build/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp" # 可扩展其他目录
+    "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/lad.cpp"
 )
-
-# 从主列表中移除排除文件
 list(REMOVE_ITEM SOURCE_FILES ${EXCLUDE_FILES})
+message(STATUS "SOURCE_FILES=${SOURCE_FILES}")
+
 add_executable(${TARGET_NAME} ${SOURCE_FILES})
-# target_compile_definitions(${TARGET_NAME} PRIVATE USE_DOUBLE_PRECISION=1)
 target_include_directories(${TARGET_NAME}
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/header
 )
+target_compile_definitions(${TARGET_NAME} PRIVATE NS=1)
 
-if(NOT IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-    message(WARNING "Source directory 'examples' does not exist!")
-else()
-    add_custom_command(
-        TARGET ${TARGET_NAME} # 绑定到主目标（如可执行文件）
-        POST_BUILD # 在主目标构建完成后执行
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/examples
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/examples
-        ${CMAKE_CURRENT_BINARY_DIR}/examples
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/examples
-        COMMENT "Copying example directory to build folder..."
-    )
-endif()
+
+file(GLOB_RECURSE SOURCE_FILES_LAD
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+)
+file(GLOB_RECURSE EXCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/build/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/ns.cpp"
+)
+list(REMOVE_ITEM SOURCE_FILES_LAD ${EXCLUDE_FILES})
+message(STATUS "SOURCE_FILES_LAD=${SOURCE_FILES_LAD}")
+add_executable(${TARGET_LAD} ${SOURCE_FILES_LAD})
+target_include_directories(${TARGET_LAD}
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/header
+)
+target_compile_definitions(${TARGET_LAD} PRIVATE LAD=1)
