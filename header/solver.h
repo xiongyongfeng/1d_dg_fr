@@ -32,6 +32,12 @@ class Solver
     void computeRhs(Rhs *, Element *);
     void computeElemRhsDG(Rhs *, Element *, int);
     void computeElemRhsFR(Rhs *, Element *, int);
+    void compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
+                          const DataType &local_det_jac,
+                          DataType (&rhs_predict)[NSP][NCONSRV]);
+    void compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
+                          const DataType (&consrv_grad)[NSP][NCONSRV],
+                          DataType (&rhs_predict)[NSP][NCONSRV]);
     void timeRK1();
     void timeRK2();
     void timeRK3();
@@ -40,5 +46,5 @@ class Solver
     void Output(const std::string &);
     void computeElementGrad(int ielem);
     void ComputeElementAvg(int ielem);
-    void Post();
+    void compGradAndAvg();
 };

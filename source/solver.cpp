@@ -17,6 +17,17 @@
 
 void Solver::Initialization()
 {
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        Geom &geom = geom_pool[iele];
+        for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
+        {
+            DataType dx = (config.x1 - config.x0) / config.n_ele;
+            geom.x[isp] = config.x0 + iele * dx + isp * dx / (NSP - 1);
+        }
+        geom.dx = geom.x[ORDER] - geom.x[0];
+        geom.local_det_jac = geom.dx / 2.0;
+    }
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -26,9 +37,6 @@ void Solver::Initialization()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                DataType dx = (config.x1 - config.x0) / config.n_ele;
-                geom_pool[iele].x[isp] =
-                    config.x0 + iele * dx + isp * dx / (NSP - 1);
                 if (geom_pool[iele].x[isp] < DataType(0.25))
                 {
                     elem.u_consrv[isp][ivar] = DataType(10.0);
@@ -65,9 +73,6 @@ void Solver::Initialization()
                    elem_consrv_left[ivar], elem_consrv_right[ivar]);
         for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
         {
-            DataType dx = (config.x1 - config.x0) / config.n_ele;
-            geom_pool[iele].x[isp] =
-                config.x0 + iele * dx + isp * dx / (NSP - 1);
             if (geom_pool[iele].x[isp] < DataType(0.0))
             {
                 elem.u_consrv[isp][0] = elem_consrv_left[0];
@@ -90,8 +95,7 @@ void Solver::Initialization()
 void Solver::computeElemRhsDG(Rhs *rhs_pool, Element *elem_pool, int iele)
 {
     Element &element = elem_pool[iele];
-    DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
-    DataType local_det_jac = hj / DataType(2.0);
+    DataType local_det_jac = geom_pool[iele].local_det_jac;
     Element &element_l = elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
     Element &element_r = elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 
@@ -174,20 +178,63 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, Element *elem_pool, int iele)
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_pool[iele].rhs[isp][ivar] +=
-                    DataType(2.0) / hj *
                     invertMatrix<DataType, ORDER>(
                         getMMatrix<DataType, ORDER>())[isp][jsp] *
-                    rhs_tmp[jsp][ivar];
+                    rhs_tmp[jsp][ivar] / local_det_jac;
             }
         }
+    }
+}
+
+void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
+                              const DataType &local_det_jac,
+                              DataType (&rhs_predict)[NSP][NCONSRV])
+{
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                rhs_predict[isp][ivar] -=
+                    getDMatrix<DataType, ORDER>()[isp][jsp] * flux[jsp][ivar] /
+                    local_det_jac;
+            }
+        }
+    }
+}
+
+void Solver::compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
+                              const DataType (&consrv_grad)[NSP][NCONSRV],
+                              DataType (&rhs_predict)[NSP][NCONSRV])
+{
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        DataType rho = consrv[isp][0];
+        DataType rho_u = consrv[isp][1];
+        DataType rho_E = consrv[isp][2];
+        DataType d_rho = consrv_grad[isp][0];
+        DataType d_rhou = consrv_grad[isp][1];
+        DataType d_rhoE = consrv_grad[isp][2];
+        DataType u = rho_u / rho;
+
+        rhs_predict[isp][0] -= d_rhou;
+        rhs_predict[isp][1] -= (-0.5 * u * u * (3.0 - GAMMA)) * d_rho +
+                               u * (3.0 - GAMMA) * d_rhou +
+                               (GAMMA - 1.0) * d_rhoE;
+        rhs_predict[isp][2] -=
+            (-rho_u * rho_E / rho / rho * GAMMA + (GAMMA - 1.0) * u * u * u) *
+                d_rho +
+            (rho_E / rho * GAMMA - 1.5 * (GAMMA - 1.0) * u * u) * d_rhou +
+            GAMMA * u * d_rhoE;
     }
 }
 
 void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
 {
     Element &element = elem_pool[iele];
-    DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
-    DataType local_det_jac = hj / DataType(2.0);
+    DataType local_det_jac = geom_pool[iele].local_det_jac;
     Element &element_l = elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
     Element &element_r = elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 
@@ -213,56 +260,7 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
 
     DataType rhs_prediction[NSP][NCONSRV]{};
 
-    // // chain rule
-    // for (int isp = 0; isp < NSP; isp++)
-    // {
-    //     for (int ivar = 0; ivar < NCONSRV; ivar++)
-    //     {
-    //         element.u_grad_consrv[isp][ivar] = 0.0;
-    //         for (int jsp = 0; jsp < NSP; jsp++)
-    //         {
-    //             element.u_grad_consrv[isp][ivar] +=
-    //                 getDMatrix<DataType, ORDER>()[isp][jsp] *
-    //                 element.u_consrv[jsp][ivar] / local_det_jac;
-    //         }
-    //     }
-    // }
-
-    // for (int isp = 0; isp < NSP; isp++)
-    // {
-    //     DataType rho = element.u_consrv[isp][0];
-    //     DataType rho_u = element.u_consrv[isp][1];
-    //     DataType rho_E = element.u_consrv[isp][2];
-    //     DataType d_rho = element.u_grad_consrv[isp][0];
-    //     DataType d_rhou = element.u_grad_consrv[isp][1];
-    //     DataType d_rhoE = element.u_grad_consrv[isp][2];
-    //     DataType u = rho_u / rho;
-
-    //     rhs_prediction[isp][0] -= d_rhou;
-    //     rhs_prediction[isp][1] -= (-0.5 * u * u * (3.0 - GAMMA)) * d_rho +
-    //                               u * (3.0 - GAMMA) * d_rhou +
-    //                               (GAMMA - 1.0) * d_rhoE;
-    //     rhs_prediction[isp][2] -=
-    //         (-rho_u * rho_E / rho / rho * GAMMA + (GAMMA - 1.0) * u * u * u)
-    //         *
-    //             d_rho +
-    //         (rho_E / rho * GAMMA - 1.5 * (GAMMA - 1.0) * u * u) * d_rhou +
-    //         GAMMA * u * d_rhoE;
-    // }
-    // // chain rule
-
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {
-            for (int jsp = 0; jsp < NSP; jsp++)
-            {
-                rhs_prediction[isp][ivar] -=
-                    getDMatrix<DataType, ORDER>()[isp][jsp] *
-                    flux_tmp[jsp][ivar] / local_det_jac;
-            }
-        }
-    }
+    compPredictionLP(flux_tmp, local_det_jac, rhs_prediction);
 
 #if 0
     if (iele == 0)
@@ -383,29 +381,12 @@ void Solver::computeRhs(Rhs *rhs_pool, Element *elem_pool)
     return;
 };
 
-void Solver::timeRK1()
-{
-
-    computeRhs(rhs_pool_tmp, elem_pool_old);
-    for (int iele = 0; iele < config.n_ele; iele++)
-    {
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                elem_pool_old[iele].u_consrv[isp][ivar] +=
-                    rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
-            }
-        }
-    }
-}
-
-void Solver::Post()
+void Solver::compGradAndAvg()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        ComputeElementAvg(iele);
         computeElementGrad(iele);
+        ComputeElementAvg(iele);
     }
     return;
 }
@@ -437,7 +418,6 @@ std::pair<DataType, int> Solver::Minmod(DataType a, DataType b, DataType c)
 
 void Solver::TvdLimiter()
 {
-    Post();
 
     bool islimited[config.n_ele];
     DataType c1[config.n_ele][NCONSRV];
@@ -482,6 +462,27 @@ void Solver::TvdLimiter()
             }
         }
     }
+
+    compGradAndAvg();
+}
+
+void Solver::timeRK1()
+{
+
+    computeRhs(rhs_pool_tmp, elem_pool_old);
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                elem_pool_old[iele].u_consrv[isp][ivar] +=
+                    rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
+            }
+        }
+    }
+
+    compGradAndAvg();
 }
 
 void Solver::timeRK2()
@@ -519,6 +520,8 @@ void Solver::timeRK2()
             }
         }
     }
+
+    compGradAndAvg();
 }
 
 void Solver::timeRK3()
@@ -571,11 +574,14 @@ void Solver::timeRK3()
             }
         }
     }
+    compGradAndAvg();
 }
 
 void Solver::computeElementGrad(int ielem)
 {
     Element &element = elem_pool_old[ielem];
+
+    DataType local_det_jac = geom_pool[ielem].local_det_jac;
 
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -586,7 +592,7 @@ void Solver::computeElementGrad(int ielem)
             {
                 element.u_grad_consrv[isp][ivar] +=
                     getDMatrix<DataType, ORDER>()[isp][jsp] *
-                    element.u_consrv[jsp][ivar];
+                    element.u_consrv[jsp][ivar] / local_det_jac;
             }
         }
     }

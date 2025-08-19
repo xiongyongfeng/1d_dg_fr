@@ -6,6 +6,8 @@
 struct Geom
 {
     DataType x[NSP];
+    DataType dx;
+    DataType local_det_jac;
 };
 
 struct Element

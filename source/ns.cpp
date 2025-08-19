@@ -34,7 +34,6 @@ void computeRiemannFlux(const DataType (&uL)[NCONSRV],
                         const DataType (&uR)[NCONSRV],
                         DataType (&flux)[NCONSRV], DataType a)
 {
-    printf("ns enter\n");
     DataType primtv_l[NPRIMTV];
     DataType primtv_r[NPRIMTV];
     Consrv2Primtv(uL, primtv_l);
