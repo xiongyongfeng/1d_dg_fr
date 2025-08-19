@@ -2,6 +2,7 @@
 #include "constants.h"
 #include "element.h"
 #include "macro.h"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -13,6 +14,10 @@
 
 #if defined(LAD)
 #include "lad.h"
+#endif
+
+#if defined(BURGERS)
+#include "burgers.h"
 #endif
 
 void Solver::Initialization()
@@ -53,6 +58,17 @@ void Solver::Initialization()
         }
 #endif
 
+#ifdef BURGERS
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                DataType x = geom_pool[iele].x[isp];
+                elem.u_consrv[isp][ivar] = 0.5 + std::sin(x);
+            }
+        }
+#endif
+
 #ifdef NS
         DataType elem_consrv_left[NCONSRV];
         DataType elem_consrv_right[NCONSRV];
@@ -68,9 +84,9 @@ void Solver::Initialization()
         elem_primtv_right[3] = 0.1 / 0.125;
         Primtv2Consrv(elem_primtv_left, elem_consrv_left);
         Primtv2Consrv(elem_primtv_right, elem_consrv_right);
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-            printf("consrv_l[ivar] = %f, consr_r[ivar]=%f\n",
-                   elem_consrv_left[ivar], elem_consrv_right[ivar]);
+        // for (int ivar = 0; ivar < NCONSRV; ivar++)
+        //     printf("consrv_l[ivar] = %f, consr_r[ivar]=%f\n",
+        //            elem_consrv_left[ivar], elem_consrv_right[ivar]);
         for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
         {
             if (geom_pool[iele].x[isp] < DataType(0.0))
@@ -92,12 +108,14 @@ void Solver::Initialization()
         ComputeElementAvg(iele);
     }
 };
-void Solver::computeElemRhsDG(Rhs *rhs_pool, Element *elem_pool, int iele)
+void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
-    Element &element = elem_pool[iele];
+    const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
-    Element &element_l = elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
-    Element &element_r = elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+    const Element &element_l =
+        elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+    const Element &element_r =
+        elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 
     DataType rhs_tmp[NSP][NCONSRV]{};
 
@@ -204,6 +222,179 @@ void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
     }
 }
 
+void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
+                                   const DataType (&consrv)[NSP][NCONSRV],
+                                   const DataType &local_det_jac,
+                                   DataType (&rhs_predict)[NSP][NCONSRV])
+{
+#ifdef LAD
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                rhs_predict[isp][ivar] -=
+                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 0.5 *
+                    (flux[jsp][ivar] + flux[isp][ivar]) / local_det_jac;
+            }
+        }
+    }
+#endif
+
+#ifdef BURGERS
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                rhs_predict[isp][ivar] -=
+                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 1.0 / 6.0 *
+                    (consrv[isp][ivar] * consrv[isp][ivar] +
+                     consrv[jsp][ivar] * consrv[isp][ivar] +
+                     consrv[jsp][ivar] * consrv[jsp][ivar]) /
+                    local_det_jac;
+            }
+        }
+    }
+#endif
+
+#ifdef NS
+
+    DataType primtv[NSP][NPRIMTV];
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        Consrv2Primtv(consrv[isp], primtv[isp]);
+    }
+    // Chandrashekar
+    // for (int isp = 0; isp < NSP; isp++)
+    // {
+    //     // fs_0
+
+    //     for (int jsp = 0; jsp < NSP; jsp++)
+    //     {
+    //         DataType rho_bar_log;
+    //         DataType rho_R = primtv[isp][0];
+    //         DataType rho_L = primtv[jsp][0];
+    //         if (std::abs(rho_R - rho_L) / (std::abs(rho_L) + 1e-12) < 1e-6)
+    //         {
+    //             rho_bar_log = rho_L;
+    //         }
+    //         else
+    //         {
+    //             rho_bar_log =
+    //                 (rho_R - rho_L) / (std::log(rho_R) - std::log(rho_L));
+    //         }
+    //         DataType u_R = primtv[isp][1];
+    //         DataType u_L = primtv[jsp][1];
+    //         DataType u_bar = 0.5 * (u_R + u_L);
+    //         DataType fs_0 = rho_bar_log * u_bar;
+    //         rhs_predict[isp][0] -= 2.0 *
+    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
+    //                                fs_0 / local_det_jac;
+
+    //         DataType rho_bar = 0.5 * (rho_R + rho_L);
+
+    //         DataType p_R = primtv[isp][2];
+    //         DataType p_L = primtv[jsp][2];
+    //         DataType beta_R = rho_R / p_R / 2.0;
+    //         DataType beta_L = rho_L / p_L / 2.0;
+    //         DataType beta_bar = 0.5 * (beta_R + beta_L);
+    //         DataType fs_1 = rho_bar / 2.0 / beta_bar + u_bar * fs_0;
+
+    //         rhs_predict[isp][1] -= 2.0 *
+    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
+    //                                fs_1 / local_det_jac;
+
+    //         DataType beta_bar_log;
+    //         if (std::abs(beta_R - beta_L) / (std::abs(beta_L) + 1e-12) <
+    //         1e-6)
+    //         {
+    //             beta_bar_log = beta_L;
+    //         }
+    //         else
+    //         {
+    //             beta_bar_log =
+    //                 (beta_R - beta_L) / (std::log(beta_R) -
+    //                 std::log(beta_L));
+    //         }
+    //         DataType u_square_bar = 0.5 * (u_R * u_R + u_L * u_L);
+    //         DataType fs_2 = (1.0 / (2.0 * (GAMMA - 1.0) * beta_bar_log) -
+    //                          0.5 * u_square_bar) *
+    //                             fs_0 +
+    //                         u_bar * fs_1;
+    //         rhs_predict[isp][2] -= 2.0 *
+    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
+    //                                fs_2 / local_det_jac;
+    //     }
+    // }
+
+    // Ismail & Roe
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        // fs_0
+        for (int jsp = 0; jsp < NSP; jsp++)
+        {
+            DataType rho_R = primtv[isp][0];
+            DataType rho_L = primtv[jsp][0];
+            DataType p_R = primtv[isp][2];
+            DataType p_L = primtv[jsp][2];
+            DataType u_R = primtv[isp][1];
+            DataType u_L = primtv[jsp][1];
+            DataType z1_L = std::sqrt(rho_L / p_L);
+            DataType z1_R = std::sqrt(rho_R / p_R);
+            DataType z2_L = z1_L * u_L;
+            DataType z2_R = z1_R * u_R;
+            DataType z3_L = z1_L * p_L;
+            DataType z3_R = z1_R * p_R;
+            DataType z2_bar = 0.5 * (z2_L + z2_R);
+            DataType z3_bar_log;
+
+            if (std::abs(z3_R - z3_L) / (std::abs(z3_L) + 1e-12) < 1e-6)
+            {
+                z3_bar_log = z3_L;
+            }
+            else
+            {
+                z3_bar_log = (z3_R - z3_L) / (std::log(z3_R) - std::log(z3_L));
+            }
+
+            DataType fs_1 = z2_bar * z3_bar_log;
+            rhs_predict[isp][0] -= 2.0 *
+                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
+                                   fs_1 / local_det_jac;
+
+            DataType z3_bar = 0.5 * (z3_L + z3_R);
+            DataType z1_bar = 0.5 * (z1_L + z1_R);
+
+            DataType fs_2 = z3_bar / z1_bar + z2_bar / z1_bar * fs_1;
+
+            rhs_predict[isp][1] -= 2.0 *
+                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
+                                   fs_2 / local_det_jac;
+
+            DataType z1_bar_log;
+            if (std::abs(z1_R - z1_L) / (std::abs(z1_L) + 1e-12) < 1e-6)
+            {
+                z1_bar_log = z1_L;
+            }
+            else
+            {
+                z1_bar_log = (z1_R - z1_L) / (std::log(z1_R) - std::log(z1_L));
+            }
+            DataType fs_3 =
+                0.5 * z2_bar / z1_bar *
+                ((GAMMA + 1.0) / (GAMMA - 1.0) * z3_bar_log / z1_bar_log +
+                 fs_2);
+            rhs_predict[isp][2] -= 2.0 *
+                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
+                                   fs_3 / local_det_jac;
+        }
+    }
+#endif
+}
+
 void Solver::compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
                               const DataType (&consrv_grad)[NSP][NCONSRV],
                               DataType (&rhs_predict)[NSP][NCONSRV])
@@ -231,12 +422,14 @@ void Solver::compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
     }
 }
 
-void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
+void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
-    Element &element = elem_pool[iele];
+    const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
-    Element &element_l = elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
-    Element &element_r = elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+    const Element &element_l =
+        elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+    const Element &element_r =
+        elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 
     DataType flux_tmp[NSP][NCONSRV]{};
 
@@ -260,7 +453,22 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
 
     DataType rhs_prediction[NSP][NCONSRV]{};
 
-    compPredictionLP(flux_tmp, local_det_jac, rhs_prediction);
+    if (config.enable_entropy_modify == true)
+    {
+        compPredictionEntropy(flux_tmp, element.u_consrv, local_det_jac,
+                              rhs_prediction);
+        // for (int isp = 0; isp < NSP; isp++)
+        // {
+        //     if (iele == 31)
+        //         printf("iele=%d,flux_tmp[%d]=%f,rhs_predition[%d]=%f\n",
+        //         iele,
+        //                isp, flux_tmp[isp][0], isp, rhs_prediction[isp][0]);
+        // }
+    }
+    else
+    {
+        compPredictionLP(flux_tmp, local_det_jac, rhs_prediction);
+    }
 
 #if 0
     if (iele == 0)
@@ -327,10 +535,20 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
         {
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                rhs_correction[isp][ivar] -=
-                    invertMatrix<DataType, ORDER>(
-                        getMMatrix<DataType, ORDER>())[isp][jsp] *
-                    flux_tmp2[jsp][ivar] / local_det_jac;
+                if (config.enable_entropy_modify == true)
+                {
+                    rhs_correction[isp][ivar] -=
+                        invertMatrix<DataType, ORDER>(
+                            getMMatrixEntropy<DataType, ORDER>())[isp][jsp] *
+                        flux_tmp2[jsp][ivar] / local_det_jac;
+                }
+                else
+                {
+                    rhs_correction[isp][ivar] -=
+                        invertMatrix<DataType, ORDER>(
+                            getMMatrix<DataType, ORDER>())[isp][jsp] *
+                        flux_tmp2[jsp][ivar] / local_det_jac;
+                }
             }
         }
     }
@@ -345,7 +563,7 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, Element *elem_pool, int iele)
         }
     }
 }
-void Solver::computeRhs(Rhs *rhs_pool, Element *elem_pool)
+void Solver::computeRhs(Rhs *rhs_pool, const Element *elem_pool)
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -503,6 +721,7 @@ void Solver::timeRK2()
             }
         }
     }
+    compGradAndAvg();
 
     computeRhs(rhs_pool_tmp, elem_pool_tmp);
     for (int iele = 0; iele < config.n_ele; iele++)
@@ -652,6 +871,40 @@ void Solver::Output(const std::string &filename)
             {
                 ofile << elem_primtv[isp][ivar] << ",";
             }
+        }
+
+        ofile << std::endl;
+    }
+    return;
+};
+
+void Solver::OutputAvg(const std::string &filename)
+{
+    if (std::filesystem::exists(filename))
+    {
+        std::cerr << "Error: File " << filename << " already exists."
+                  << std::endl;
+        return;
+    }
+    std::ofstream ofile(filename);
+    if (!ofile)
+    {
+        std::cerr << "Error: Failed to create file." << std::endl;
+        return;
+    }
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        const Element &elem = elem_pool_old[iele];
+
+        ofile << geom_pool[iele].x[0] + 0.5 * geom_pool[iele].dx << ",";
+
+        DataType elem_primtv_ave[NPRIMTV];
+
+        Consrv2Primtv(elem_pool_old[iele].u_avg, elem_primtv_ave);
+
+        for (int ivar = 0; ivar < NPRIMTV; ivar++)
+        {
+            ofile << elem_primtv_ave[ivar] << ",";
         }
 
         ofile << std::endl;

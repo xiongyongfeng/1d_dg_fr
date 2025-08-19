@@ -12,6 +12,7 @@ endif()
 
 set(TARGET_NAME main_ns)
 set(TARGET_LAD main_lad)
+set(TARGET_BURGERS main_burgers)
 
 
 file(GLOB_RECURSE SOURCE_FILES
@@ -21,6 +22,7 @@ file(GLOB_RECURSE EXCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/build/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/source/lad.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/burgers.cpp"
 )
 list(REMOVE_ITEM SOURCE_FILES ${EXCLUDE_FILES})
 message(STATUS "SOURCE_FILES=${SOURCE_FILES}")
@@ -40,6 +42,7 @@ file(GLOB_RECURSE EXCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/build/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/source/ns.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/burgers.cpp"
 )
 list(REMOVE_ITEM SOURCE_FILES_LAD ${EXCLUDE_FILES})
 message(STATUS "SOURCE_FILES_LAD=${SOURCE_FILES_LAD}")
@@ -49,3 +52,21 @@ target_include_directories(${TARGET_LAD}
     ${CMAKE_CURRENT_SOURCE_DIR}/header
 )
 target_compile_definitions(${TARGET_LAD} PRIVATE LAD=1)
+
+file(GLOB_RECURSE SOURCE_FILES_BURGERS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+)
+file(GLOB_RECURSE EXCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/build/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dist/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/lad.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/ns.cpp"
+)
+list(REMOVE_ITEM SOURCE_FILES_BURGERS ${EXCLUDE_FILES})
+message(STATUS "SOURCE_FILES_BURGERS=${SOURCE_FILES_BURGERS}")
+add_executable(${TARGET_BURGERS} ${SOURCE_FILES_BURGERS})
+target_include_directories(${TARGET_BURGERS}
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/header
+)
+target_compile_definitions(${TARGET_BURGERS} PRIVATE BURGERS=1)

@@ -19,5 +19,10 @@ constexpr size_t NCONSRV = 1;
 constexpr size_t NPRIMTV = 1;
 #endif
 
+#ifdef BURGERS
+constexpr size_t NCONSRV = 1;
+constexpr size_t NPRIMTV = 1;
+#endif
+
 constexpr DataType GAMMA = 1.4;
 constexpr DataType GAS_R = 1.0;

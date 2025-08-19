@@ -67,6 +67,30 @@ constexpr auto getMMatrix()
     }
 };
 
+// entropy mass matrix
+// M_ij = \int_{-1}^{1} l_i l_j d\xi
+template <typename T, size_t ORDER>
+constexpr auto getMMatrixEntropy()
+{
+    static_assert(ORDER <= 3, "Unsupported ORDER");
+    using ArrayType = std::array<T, ORDER + 1>;
+    using MatrixType = std::array<std::array<T, ORDER + 1>, ORDER + 1>;
+    if constexpr (ORDER == 1)
+    {
+        return MatrixType{ArrayType{T(1.0), T(0.0)}, ArrayType{T(0.0), T(1.0)}};
+    }
+    else if constexpr (ORDER == 2)
+    {
+        return MatrixType{ArrayType{0.33333333, 0.0, 0.0},
+                          ArrayType{0.0, 1.33333333, 0.0},
+                          ArrayType{0.0, 0.0, 0.33333333}};
+    }
+    else
+    {
+        return std::array<std::array<T, 0>, 0>{};
+    }
+};
+
 template <typename T, size_t ORDER>
 constexpr auto
 invertMatrix(const std::array<std::array<T, ORDER + 1>, ORDER + 1> &mat)

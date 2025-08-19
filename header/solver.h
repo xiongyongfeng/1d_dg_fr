@@ -29,12 +29,17 @@ class Solver
     };
 
     void Initialization();
-    void computeRhs(Rhs *, Element *);
-    void computeElemRhsDG(Rhs *, Element *, int);
-    void computeElemRhsFR(Rhs *, Element *, int);
+    void computeRhs(Rhs *, const Element *);
+    void computeElemRhsDG(Rhs *, const Element *, int);
+    void computeElemRhsFR(Rhs *, const Element *, int);
     void compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
                           const DataType &local_det_jac,
                           DataType (&rhs_predict)[NSP][NCONSRV]);
+    void compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
+                               const DataType (&consrv)[NSP][NCONSRV],
+                               const DataType &local_det_jac,
+                               DataType (&rhs_predict)[NSP][NCONSRV]);
+
     void compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
                           const DataType (&consrv_grad)[NSP][NCONSRV],
                           DataType (&rhs_predict)[NSP][NCONSRV]);
@@ -44,6 +49,7 @@ class Solver
     void TvdLimiter();
     std::pair<DataType, int> Minmod(DataType a, DataType b, DataType c);
     void Output(const std::string &);
+    void OutputAvg(const std::string &);
     void computeElementGrad(int ielem);
     void ComputeElementAvg(int ielem);
     void compGradAndAvg();

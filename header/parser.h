@@ -21,6 +21,7 @@ struct adl_serializer<Config>
                  {"a", c.a},
                  {"output_dir", c.output_dir},
                  {"limiter_type", c.limiter_type},
+                 {"enable_entropy_modify", c.enable_entropy_modify},
                  {"dg_fr_type", c.dg_fr_type}};
     }
     static void from_json(const json &j, Config &c)
@@ -38,10 +39,15 @@ struct adl_serializer<Config>
         {
             it->get_to(c.limiter_type);
         }
-        auto itt = j.find("dg_fr_type");
-        if (itt != j.end())
+        it = j.find("enable_entropy_modify");
+        if (it != j.end())
         {
-            itt->get_to(c.dg_fr_type);
+            it->get_to(c.enable_entropy_modify);
+        }
+        it = j.find("dg_fr_type");
+        if (it != j.end())
+        {
+            it->get_to(c.dg_fr_type);
         }
     }
 };

@@ -53,6 +53,7 @@ int main(int argc, char **argv)
     }
     Config config = nlohmann::loadConfig(argv[1]);
     ensurePathExists(config.output_dir);
+    ensurePathExists(config.output_dir + "_avg");
     Solver solver(config, config.n_ele);
 
     solver.Initialization();
@@ -66,6 +67,11 @@ int main(int argc, char **argv)
             config.output_dir + "/init" + std::to_string(current_time) + ".csv";
         std::cout << "output file: " << filename << std::endl;
         solver.Output(filename);
+
+        std::string filename_avg = config.output_dir + "_avg/init" +
+                                   std::to_string(current_time) + ".csv";
+        std::cout << "output file: " << filename_avg << std::endl;
+        solver.OutputAvg(filename_avg);
     }
 
     while (current_time <= config.total_time)
@@ -84,6 +90,12 @@ int main(int argc, char **argv)
                                    std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;
             solver.Output(filename);
+
+            std::string filename_avg = config.output_dir +
+                                       "_avg/result_before" +
+                                       std::to_string(current_time) + ".csv";
+            std::cout << "output file: " << filename_avg << std::endl;
+            solver.OutputAvg(filename_avg);
         }
 
         if (config.limiter_type == 1)
@@ -100,6 +112,11 @@ int main(int argc, char **argv)
                                    std::to_string(current_time) + ".csv";
             std::cout << "output file: " << filename << std::endl;
             solver.Output(filename);
+
+            std::string filename_avg = config.output_dir + "_avg/result_after" +
+                                       std::to_string(current_time) + ".csv";
+            std::cout << "output file: " << filename_avg << std::endl;
+            solver.OutputAvg(filename_avg);
         }
     }
 
