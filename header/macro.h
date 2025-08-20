@@ -1,7 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <iostream>
-#define USE_DOUBLE_PRECISION 1
+// #define USE_DOUBLE_PRECISION 1
 #if USE_DOUBLE_PRECISION
 using DataType = double; // 双精度类型
 #else
