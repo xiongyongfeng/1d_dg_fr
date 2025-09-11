@@ -1,12 +1,15 @@
 {
-  "x1": 1.0,
-  "x0": 0.0,
-  "n_ele": 128,
-  "dt": 0.001,
-  "total_time": 1,
-  "output_time_step": 0.1,
   "a": 1.0,
-  "output_dir": "./soln_dg_1s",
-  "limiter_type": 1,
-  "dg_fr_type": 0
+  "dg_fr_type": 1,
+  "dt": 0.0010000000474974513,
+  "enable_entropy_modify": false,
+  "limiter_type": 0,
+  "n_ele": 128,
+  "output_dir": "./soln_fr_false_0",
+  "output_time_step": 0.0010000000474974513,
+  "time_scheme_type": 0,
+  "total_time": 0.009999999776482582,
+  "weight": 0.5,
+  "x0": 0.0,
+  "x1": 1.0
 }
