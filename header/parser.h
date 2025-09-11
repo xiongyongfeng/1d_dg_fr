@@ -19,6 +19,7 @@ struct adl_serializer<Config>
                  {"total_time", c.total_time},
                  {"output_time_step", c.output_time_step},
                  {"a", c.a},
+                 {"nu", c.nu},
                  {"output_dir", c.output_dir},
                  {"limiter_type", c.limiter_type},
                  {"enable_entropy_modify", c.enable_entropy_modify},
@@ -35,6 +36,7 @@ struct adl_serializer<Config>
         j.at("total_time").get_to(c.total_time);
         j.at("output_time_step").get_to(c.output_time_step);
         j.at("a").get_to(c.a);
+        j.at("nu").get_to(c.nu);
         j.at("output_dir").get_to(c.output_dir);
         auto it = j.find("limiter_type");
         if (it != j.end())
