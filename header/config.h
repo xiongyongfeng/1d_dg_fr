@@ -17,4 +17,6 @@ struct Config
     int limiter_type = 0; // 0 no limiter, 1 tvd limiter
     int dg_fr_type = 0;   // 0 for DG, 1 for FR
     bool enable_entropy_modify = false;
+    DataType weight = 0.5;
+    int time_scheme_type = 0; // 0 for tvd-rk, 1 for new time scheme
 };

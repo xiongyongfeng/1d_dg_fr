@@ -22,7 +22,9 @@ struct adl_serializer<Config>
                  {"output_dir", c.output_dir},
                  {"limiter_type", c.limiter_type},
                  {"enable_entropy_modify", c.enable_entropy_modify},
-                 {"dg_fr_type", c.dg_fr_type}};
+                 {"dg_fr_type", c.dg_fr_type},
+                 {"weight", c.weight},
+                 {"time_scheme_type", c.time_scheme_type}};
     }
     static void from_json(const json &j, Config &c)
     {
@@ -43,6 +45,16 @@ struct adl_serializer<Config>
         if (it != j.end())
         {
             it->get_to(c.enable_entropy_modify);
+        }
+        it = j.find("weight");
+        if (it != j.end())
+        {
+            it->get_to(c.weight);
+        }
+        it = j.find("time_scheme_type");
+        if (it != j.end())
+        {
+            it->get_to(c.time_scheme_type);
         }
         it = j.find("dg_fr_type");
         if (it != j.end())

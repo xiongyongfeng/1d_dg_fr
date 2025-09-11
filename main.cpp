@@ -52,6 +52,8 @@ int main(int argc, char **argv)
         exit(-1);
     }
     Config config = nlohmann::loadConfig(argv[1]);
+    nlohmann::json j = config; // 自动序列化
+    std::cout << j.dump(4);    // 缩进4格输出，便于阅读
     ensurePathExists(config.output_dir);
     ensurePathExists(config.output_dir + "_avg");
     Solver solver(config, config.n_ele);
@@ -77,8 +79,15 @@ int main(int argc, char **argv)
     while (current_time <= config.total_time)
     {
 
-        // solver.timeRK3();
-        solver.timeRK1();
+        if (config.time_scheme_type == 0)
+        {
+            // solver.timeRK3();
+            solver.timeRK1();
+        }
+        if (config.time_scheme_type == 1)
+        {
+            solver.timeNewExplicitSchemeK1();
+        }
         current_time += config.dt;
 
         if (static_cast<int>(std::round(current_time / config.dt)) %

@@ -9,6 +9,9 @@ using DataType = float; // 单精度类型
 #endif
 constexpr size_t ORDER = 1;
 constexpr size_t NSP = ORDER + 1;
+
+constexpr size_t TORDER = 1;
+constexpr size_t NTP = TORDER + 1;
 #ifdef NS
 constexpr size_t NCONSRV = 3;
 constexpr size_t NPRIMTV = 4;

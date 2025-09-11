@@ -34,78 +34,82 @@ void Solver::Initialization()
         geom.local_det_jac = geom.dx / 2.0;
     }
 
-    for (int iele = 0; iele < config.n_ele; iele++)
+    for (int itp = 0; itp < NTP; itp++)
     {
-        Element &elem = elem_pool_old[iele];
-#ifdef LAD
-        for (int isp = 0; isp < NSP; isp++)
+
+        for (int iele = 0; iele < config.n_ele; iele++)
         {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            Element &elem = elem_pool_old[itp][iele];
+#ifdef LAD
+            for (int isp = 0; isp < NSP; isp++)
             {
-                if (geom_pool[iele].x[isp] < DataType(0.25))
+                for (int ivar = 0; ivar < NCONSRV; ivar++)
                 {
-                    elem.u_consrv[isp][ivar] = DataType(10.0);
-                }
-                else if (geom_pool[iele].x[isp] > DataType(0.75))
-                {
-                    elem.u_consrv[isp][ivar] = DataType(10.0);
-                }
-                else
-                {
-                    elem.u_consrv[isp][ivar] = DataType(11.0);
+                    if (geom_pool[iele].x[isp] < DataType(0.25))
+                    {
+                        elem.u_consrv[isp][ivar] = DataType(10.0);
+                    }
+                    else if (geom_pool[iele].x[isp] > DataType(0.75))
+                    {
+                        elem.u_consrv[isp][ivar] = DataType(10.0);
+                    }
+                    else
+                    {
+                        elem.u_consrv[isp][ivar] = DataType(11.0);
+                    }
                 }
             }
-        }
 #endif
 
 #ifdef BURGERS
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            for (int isp = 0; isp < NSP; isp++)
             {
-                DataType x = geom_pool[iele].x[isp];
-                elem.u_consrv[isp][ivar] = 0.5 + std::sin(x);
+                for (int ivar = 0; ivar < NCONSRV; ivar++)
+                {
+                    DataType x = geom_pool[iele].x[isp];
+                    elem.u_consrv[isp][ivar] = 0.5 + std::sin(x);
+                }
             }
-        }
 #endif
 
 #ifdef NS
-        DataType elem_consrv_left[NCONSRV];
-        DataType elem_consrv_right[NCONSRV];
-        DataType elem_primtv_left[NPRIMTV];
-        DataType elem_primtv_right[NPRIMTV];
-        elem_primtv_left[0] = 1.0;
-        elem_primtv_left[1] = 0.0;
-        elem_primtv_left[2] = 1.0;
-        elem_primtv_left[3] = 1.0;
-        elem_primtv_right[0] = 0.125;
-        elem_primtv_right[1] = 0.0;
-        elem_primtv_right[2] = 0.1;
-        elem_primtv_right[3] = 0.1 / 0.125;
-        Primtv2Consrv(elem_primtv_left, elem_consrv_left);
-        Primtv2Consrv(elem_primtv_right, elem_consrv_right);
-        // for (int ivar = 0; ivar < NCONSRV; ivar++)
-        //     printf("consrv_l[ivar] = %f, consr_r[ivar]=%f\n",
-        //            elem_consrv_left[ivar], elem_consrv_right[ivar]);
-        for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
-        {
-            if (geom_pool[iele].x[isp] < DataType(0.0))
+            DataType elem_consrv_left[NCONSRV];
+            DataType elem_consrv_right[NCONSRV];
+            DataType elem_primtv_left[NPRIMTV];
+            DataType elem_primtv_right[NPRIMTV];
+            elem_primtv_left[0] = 1.0;
+            elem_primtv_left[1] = 0.0;
+            elem_primtv_left[2] = 1.0;
+            elem_primtv_left[3] = 1.0;
+            elem_primtv_right[0] = 0.125;
+            elem_primtv_right[1] = 0.0;
+            elem_primtv_right[2] = 0.1;
+            elem_primtv_right[3] = 0.1 / 0.125;
+            Primtv2Consrv(elem_primtv_left, elem_consrv_left);
+            Primtv2Consrv(elem_primtv_right, elem_consrv_right);
+            // for (int ivar = 0; ivar < NCONSRV; ivar++)
+            //     printf("consrv_l[ivar] = %f, consr_r[ivar]=%f\n",
+            //            elem_consrv_left[ivar], elem_consrv_right[ivar]);
+            for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
             {
-                elem.u_consrv[isp][0] = elem_consrv_left[0];
-                elem.u_consrv[isp][1] = elem_consrv_left[1];
-                elem.u_consrv[isp][2] = elem_consrv_left[2];
+                if (geom_pool[iele].x[isp] < DataType(0.0))
+                {
+                    elem.u_consrv[isp][0] = elem_consrv_left[0];
+                    elem.u_consrv[isp][1] = elem_consrv_left[1];
+                    elem.u_consrv[isp][2] = elem_consrv_left[2];
+                }
+                else
+                {
+                    elem.u_consrv[isp][0] = elem_consrv_right[0];
+                    elem.u_consrv[isp][1] = elem_consrv_right[1];
+                    elem.u_consrv[isp][2] = elem_consrv_right[2];
+                }
             }
-            else
-            {
-                elem.u_consrv[isp][0] = elem_consrv_right[0];
-                elem.u_consrv[isp][1] = elem_consrv_right[1];
-                elem.u_consrv[isp][2] = elem_consrv_right[2];
-            }
-        }
 #endif
 
-        computeElementGrad(iele);
-        ComputeElementAvg(iele);
+            computeElementGrad(iele);
+            ComputeElementAvg(iele);
+        }
     }
 };
 void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
@@ -641,12 +645,12 @@ void Solver::TvdLimiter()
     DataType c1[config.n_ele][NCONSRV];
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        Element &element = elem_pool_old[iele];
+        Element &element = elem_pool_old[TORDER][iele];
         DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
         Element &element_l =
-            elem_pool_old[(iele - 1 + config.n_ele) % config.n_ele];
+            elem_pool_old[TORDER][(iele - 1 + config.n_ele) % config.n_ele];
         Element &element_r =
-            elem_pool_old[(iele + 1 + config.n_ele) % config.n_ele];
+            elem_pool_old[TORDER][(iele + 1 + config.n_ele) % config.n_ele];
 
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
@@ -665,7 +669,7 @@ void Solver::TvdLimiter()
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        Element &element = elem_pool_old[iele];
+        Element &element = elem_pool_old[TORDER][iele];
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -684,18 +688,88 @@ void Solver::TvdLimiter()
     compGradAndAvg();
 }
 
-void Solver::timeRK1()
+void Solver::timeNewExplicitSchemeK1()
 {
-
-    computeRhs(rhs_pool_tmp, elem_pool_old);
+    // compute u*_i
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_old[iele].u_consrv[isp][ivar] +=
-                    rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
+                elem_pool_tmp[0][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[1][iele].u_consrv[isp][ivar];
+                elem_pool_tmp[1][iele].u_consrv[isp][ivar] =
+                    -elem_pool_old[0][iele].u_consrv[isp][ivar] +
+                    2.0 * elem_pool_old[1][iele].u_consrv[isp][ivar];
+            }
+        }
+    }
+
+    computeRhs(rhs_pool_tmp[0], elem_pool_tmp[0]);
+    computeRhs(rhs_pool_tmp[1], elem_pool_tmp[1]);
+
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                elem_pool_tmp[0][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[0][iele].u_consrv[isp][ivar];
+                elem_pool_tmp[1][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[1][iele].u_consrv[isp][ivar];
+            }
+        }
+    }
+
+    DataType w = config.weight;
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                DataType u_nm1_0 = elem_pool_tmp[0][iele].u_consrv[isp][ivar];
+                DataType u_nm1_1 = elem_pool_tmp[1][iele].u_consrv[isp][ivar];
+                DataType rhs0 = rhs_pool_tmp[0][iele].rhs[isp][ivar];
+                DataType rhs1 = rhs_pool_tmp[1][iele].rhs[isp][ivar];
+                elem_pool_old[0][iele].u_consrv[isp][ivar] =
+                    (1.0 / w - 1.0) * u_nm1_0 + (2.0 - 1.0 / w) * u_nm1_1 +
+
+                    (rhs0 * (2.0 / w - 1.0) - rhs1) * config.dt * 0.5;
+                elem_pool_old[1][iele].u_consrv[isp][ivar] =
+                    1.0 * u_nm1_1 +
+
+                    (rhs0 + rhs1) * config.dt * 0.5;
+            }
+        }
+    }
+
+    compGradAndAvg();
+
+    std::ofstream ofile("monitor_point.csv", std::ios::app);
+    if (!ofile)
+    {
+        std::cerr << "Error: Failed to create file." << std::endl;
+        return;
+    }
+    ofile << elem_pool_old[0][0].u_consrv[0][0] << ","
+          << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
+}
+
+void Solver::timeRK1()
+{
+
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +=
+                    rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
@@ -706,7 +780,7 @@ void Solver::timeRK1()
 void Solver::timeRK2()
 {
 
-    computeRhs(rhs_pool_tmp, elem_pool_old);
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -715,15 +789,15 @@ void Solver::timeRK2()
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
 
-                elem_pool_tmp[iele].u_consrv[isp][ivar] =
-                    elem_pool_old[iele].u_consrv[isp][ivar] +
-                    rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
+                elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
+                    rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
     compGradAndAvg();
 
-    computeRhs(rhs_pool_tmp, elem_pool_tmp);
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_tmp[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
 
@@ -731,10 +805,12 @@ void Solver::timeRK2()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_old[iele].u_consrv[isp][ivar] =
-                    DataType(0.5) * elem_pool_old[iele].u_consrv[isp][ivar] +
-                    DataType(0.5) * elem_pool_tmp[iele].u_consrv[isp][ivar] +
-                    DataType(0.5) * rhs_pool_tmp[iele].rhs[isp][ivar] *
+                elem_pool_old[TORDER][iele].u_consrv[isp][ivar] =
+                    DataType(0.5) *
+                        elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
+                    DataType(0.5) *
+                        elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] +
+                    DataType(0.5) * rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] *
                         config.dt;
             }
         }
@@ -745,7 +821,7 @@ void Solver::timeRK2()
 
 void Solver::timeRK3()
 {
-    computeRhs(rhs_pool_tmp, elem_pool_old);
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -753,43 +829,45 @@ void Solver::timeRK3()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_tmp[iele].u_consrv[isp][ivar] =
-                    elem_pool_old[iele].u_consrv[isp][ivar] +
-                    rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
+                elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
+                    rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
 
-    computeRhs(rhs_pool_tmp, elem_pool_tmp);
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_tmp[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_tmp[iele].u_consrv[isp][ivar] =
-                    DataType(0.75) * elem_pool_old[iele].u_consrv[isp][ivar] +
-                    DataType(0.25) * elem_pool_tmp[iele].u_consrv[isp][ivar] +
-                    DataType(0.25) * rhs_pool_tmp[iele].rhs[isp][ivar] *
+                elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] =
+                    DataType(0.75) *
+                        elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
+                    DataType(0.25) *
+                        elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] +
+                    DataType(0.25) * rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] *
                         config.dt;
             }
         }
     }
 
-    computeRhs(rhs_pool_tmp, elem_pool_tmp);
+    computeRhs(rhs_pool_tmp[TORDER], elem_pool_tmp[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_old[iele].u_consrv[isp][ivar] =
+                elem_pool_old[TORDER][iele].u_consrv[isp][ivar] =
                     DataType(1.0) / DataType(3.0) *
-                        elem_pool_old[iele].u_consrv[isp][ivar] +
+                        elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
                     DataType(2.0) / DataType(3.0) *
-                        elem_pool_tmp[iele].u_consrv[isp][ivar] +
+                        elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] +
                     DataType(2.0) / DataType(3.0) *
-                        rhs_pool_tmp[iele].rhs[isp][ivar] * config.dt;
+                        rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
@@ -798,36 +876,43 @@ void Solver::timeRK3()
 
 void Solver::computeElementGrad(int ielem)
 {
-    Element &element = elem_pool_old[ielem];
-
-    DataType local_det_jac = geom_pool[ielem].local_det_jac;
-
-    for (int isp = 0; isp < NSP; isp++)
+    for (int itp = 0; itp < NTP; itp++)
     {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
+
+        Element &element = elem_pool_old[itp][ielem];
+
+        DataType local_det_jac = geom_pool[ielem].local_det_jac;
+
+        for (int isp = 0; isp < NSP; isp++)
         {
-            element.u_grad_consrv[isp][ivar] = DataType(0);
-            for (int jsp = 0; jsp < NSP; jsp++)
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                element.u_grad_consrv[isp][ivar] +=
-                    getDMatrix<DataType, ORDER>()[isp][jsp] *
-                    element.u_consrv[jsp][ivar] / local_det_jac;
+                element.u_grad_consrv[isp][ivar] = DataType(0);
+                for (int jsp = 0; jsp < NSP; jsp++)
+                {
+                    element.u_grad_consrv[isp][ivar] +=
+                        getDMatrix<DataType, ORDER>()[isp][jsp] *
+                        element.u_consrv[jsp][ivar] / local_det_jac;
+                }
             }
         }
     }
 }
 void Solver::ComputeElementAvg(int ielem)
 {
-    Element &element = elem_pool_old[ielem];
-    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    for (int itp = 0; itp < NTP; itp++)
     {
-        element.u_avg[ivar] = DataType(0);
-        for (int isp = 0; isp < NSP; isp++)
+        Element &element = elem_pool_old[itp][ielem];
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            element.u_avg[ivar] += getLGLWeights<DataType, ORDER>()[isp] *
-                                   element.u_consrv[isp][ivar];
+            element.u_avg[ivar] = DataType(0);
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                element.u_avg[ivar] += getLGLWeights<DataType, ORDER>()[isp] *
+                                       element.u_consrv[isp][ivar];
+            }
+            element.u_avg[ivar] /= DataType(2.0);
         }
-        element.u_avg[ivar] /= DataType(2.0);
     }
 }
 
@@ -847,7 +932,7 @@ void Solver::Output(const std::string &filename)
     }
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        const Element &elem = elem_pool_old[iele];
+        const Element &elem = elem_pool_old[TORDER][iele];
         for (int isp = 0; isp < NSP; isp++)
         {
             ofile << geom_pool[iele].x[isp] << ",";
@@ -859,7 +944,7 @@ void Solver::Output(const std::string &filename)
         {
 
             DataType primtv[NPRIMTV];
-            Consrv2Primtv(elem_pool_old[iele].u_consrv[isp], primtv);
+            Consrv2Primtv(elem.u_consrv[isp], primtv);
             for (int ivar = 0; ivar < NPRIMTV; ivar++)
             {
                 elem_primtv[isp][ivar] = primtv[ivar];
@@ -894,13 +979,13 @@ void Solver::OutputAvg(const std::string &filename)
     }
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        const Element &elem = elem_pool_old[iele];
+        const Element &elem = elem_pool_old[TORDER][iele];
 
         ofile << geom_pool[iele].x[0] + 0.5 * geom_pool[iele].dx << ",";
 
         DataType elem_primtv_ave[NPRIMTV];
 
-        Consrv2Primtv(elem_pool_old[iele].u_avg, elem_primtv_ave);
+        Consrv2Primtv(elem.u_avg, elem_primtv_ave);
 
         for (int ivar = 0; ivar < NPRIMTV; ivar++)
         {
