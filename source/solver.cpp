@@ -118,13 +118,15 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     DataType local_det_jac = geom_pool[iele].local_det_jac;
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+    DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+    DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType rhs_tmp[NSP][NCONSRV]{};
 
     DataType flux_tmp[NSP][NCONSRV]{};
-
+    
     for (int isp = 0; isp < NSP; isp++)
     {
         computeFlux(element.u_consrv[isp], flux_tmp[isp], config.a);
@@ -191,6 +193,87 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         rhs_tmp[0][ivar] += rhs_common_flux_left[ivar];
         rhs_tmp[ORDER][ivar] -= rhs_common_flux_right[ivar];
     }
+
+
+
+#ifdef LAD
+    // add diffusion term 
+    DataType visflux_tmp[NSP][NCONSRV]{};
+    DataType rhs_common_visflux_left[NCONSRV];
+    DataType rhs_common_visflux_right[NCONSRV];
+    DataType globalLift[NSP*NCONSRV]; // !!wrong
+    DataType globalLift_L[NSP*NCONSRV]; // !!wrong
+    DataType globalLift_R[NSP*NCONSRV]; // !!wrong
+
+
+    computeBR2Flux(element_l.u_consrv[ORDER],
+        element_l.u_grad_consrv[ORDER],
+        element.u_consrv[0],
+        element.u_grad_consrv[0],
+        local_det_jac_L,
+        local_det_jac,
+        rhs_common_visflux_left,
+        globalLift_L,
+        globalLift,
+        config.nu);
+    computeBR2Flux(element.u_consrv[ORDER],
+        element.u_grad_consrv[ORDER],
+        element_r.u_consrv[0],
+        element_r.u_grad_consrv[0],
+        local_det_jac,
+        local_det_jac_R,
+        rhs_common_visflux_right,
+        globalLift,
+        globalLift_R,
+        config.nu);
+
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    {
+        rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
+        rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
+    }
+
+    // add global lift's contribution on grad
+    DataType grad_u_consrv_[NSP][NCONSRV];
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar];
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                grad_u_consrv_[isp][ivar] -=
+                    getDMatrix<DataType, ORDER>()[isp][jsp] *
+                    globalLift[jsp*NCONSRV+ivar] / local_det_jac;
+            }
+        }
+    }
+    
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        computeVisFlux(element.u_consrv[isp], 
+            grad_u_consrv_[isp],
+            visflux_tmp[isp], 
+            config.nu);
+    }
+
+    
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                rhs_tmp[isp][ivar] +=
+                    getSMatrix<DataType, ORDER>()[jsp][isp] *
+                    visflux_tmp[jsp][ivar];
+            }
+        }
+    }
+    #endif
+
+    
 
     for (int isp = 0; isp < NSP; isp++)
     {
