@@ -34,6 +34,8 @@ target_include_directories(${TARGET_NAME}
 )
 target_compile_definitions(${TARGET_NAME} PRIVATE NS=1)
 
+include_directories(/opt/homebrew/include)
+
 
 file(GLOB_RECURSE SOURCE_FILES_LAD
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
