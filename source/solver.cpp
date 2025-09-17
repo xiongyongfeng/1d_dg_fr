@@ -45,18 +45,19 @@ void Solver::Initialization()
             {
                 for (int ivar = 0; ivar < NCONSRV; ivar++)
                 {
-                    if (geom_pool[iele].x[isp] < DataType(0.25))
-                    {
-                        elem.u_consrv[isp][ivar] = DataType(10.0);
-                    }
-                    else if (geom_pool[iele].x[isp] > DataType(0.75))
-                    {
-                        elem.u_consrv[isp][ivar] = DataType(10.0);
-                    }
-                    else
-                    {
-                        elem.u_consrv[isp][ivar] = DataType(11.0);
-                    }
+                    // if (geom_pool[iele].x[isp] < DataType(0.25))
+                    // {
+                    //     elem.u_consrv[isp][ivar] = DataType(10.0);
+                    // }
+                    // else if (geom_pool[iele].x[isp] > DataType(0.75))
+                    // {
+                    //     elem.u_consrv[isp][ivar] = DataType(10.0);
+                    // }
+                    // else
+                    // {
+                    //     elem.u_consrv[isp][ivar] = DataType(11.0);
+                    // }
+                    elem.u_consrv[isp][ivar] = std::sin(2*acos(-1.0)*geom_pool[iele].x[isp]);
                 }
             }
 #endif
@@ -201,9 +202,9 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     DataType visflux_tmp[NSP][NCONSRV]{};
     DataType rhs_common_visflux_left[NCONSRV];
     DataType rhs_common_visflux_right[NCONSRV];
-    DataType globalLift[NSP*NCONSRV]; // !!wrong
-    DataType globalLift_L[NSP*NCONSRV]; // !!wrong
-    DataType globalLift_R[NSP*NCONSRV]; // !!wrong
+    DataType globalLift[NSP*NCONSRV]={0.0}; 
+    DataType globalLift_L[NSP*NCONSRV]; 
+    DataType globalLift_R[NSP*NCONSRV]; 
 
 
     computeBR2Flux(element_l.u_consrv[ORDER],
@@ -239,15 +240,10 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar];
-            for (int jsp = 0; jsp < NSP; jsp++)
-            {
-                grad_u_consrv_[isp][ivar] -=
-                    getDMatrix<DataType, ORDER>()[isp][jsp] *
-                    globalLift[jsp*NCONSRV+ivar] / local_det_jac;
-            }
+            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar]-globalLift[isp*NCONSRV+ivar];
         }
     }
+    
     
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -265,7 +261,7 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         {
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                rhs_tmp[isp][ivar] +=
+                rhs_tmp[isp][ivar] -=
                     getSMatrix<DataType, ORDER>()[jsp][isp] *
                     visflux_tmp[jsp][ivar];
             }
@@ -846,7 +842,7 @@ void Solver::timeRK1()
 
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
-    {
+    {   
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
