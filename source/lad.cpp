@@ -91,8 +91,8 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {   
-            globalLift_L[isp*NCONSRV+ivar] = localLift_L[isp][ivar];
-            globalLift_R[isp*NCONSRV+ivar] = localLift_R[isp][ivar];
+            globalLift_L[isp*NCONSRV+ivar] += localLift_L[isp][ivar];
+            globalLift_R[isp*NCONSRV+ivar] += localLift_R[isp][ivar];
         }
     }
 
@@ -102,14 +102,8 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
     
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {   
-        uL_grad_[ivar] = DataType(0);
-        uR_grad_[ivar] = DataType(0);
-
-        for (int isp = 0; isp < NSP; isp++)
-        {   
-           uL_grad_[ivar] += DMass[ORDER][isp] * localLift_L[isp][ivar]/local_det_jac_L;
-           uR_grad_[ivar] += DMass[0][isp] * localLift_R[isp][ivar]/local_det_jac_R;
-        }
+        uL_grad_[ivar] = localLift_L[ORDER][ivar];
+        uR_grad_[ivar] = localLift_R[0][ivar];
     }
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
