@@ -781,6 +781,14 @@ void Solver::timeNewExplicitSchemeK1()
                 elem_pool_tmp[1][iele].u_consrv[isp][ivar] =
                     -elem_pool_old[0][iele].u_consrv[isp][ivar] +
                     2.0 * elem_pool_old[1][iele].u_consrv[isp][ivar];
+
+                elem_pool_tmp[0][iele].u_grad_consrv[isp][ivar] = 
+                    elem_pool_old[1][iele].u_grad_consrv[isp][ivar];
+                elem_pool_tmp[1][iele].u_grad_consrv[isp][ivar] = 
+                    -elem_pool_old[0][iele].u_grad_consrv[isp][ivar] +
+                    2.0 * elem_pool_old[1][iele].u_grad_consrv[isp][ivar];
+
+
             }
         }
     }
