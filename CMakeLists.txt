@@ -35,6 +35,7 @@ target_include_directories(${TARGET_NAME}
 target_compile_definitions(${TARGET_NAME} PRIVATE NS=1)
 
 include_directories(/opt/homebrew/include)
+include_directories(/opt/homebrew/include/eigen3)
 
 
 file(GLOB_RECURSE SOURCE_FILES_LAD

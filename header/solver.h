@@ -11,6 +11,10 @@ class Solver
     Rhs **rhs_pool_tmp;
     Config config;
 
+
+ public:
+    
+
   public:
     Solver(const Config &config, int nelem)
     {
@@ -61,6 +65,8 @@ class Solver
                           DataType (&rhs_predict)[NSP][NCONSRV]);
     void timeRK1();
     void timeNewExplicitSchemeK1();
+    void timeNewExplicitSchemeKN();
+    void timeNewImplicitSchemeKN();
     void timeRK2();
     void timeRK3();
     void TvdLimiter();

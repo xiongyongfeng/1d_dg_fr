@@ -3,6 +3,7 @@
 #include "element.h"
 #include "macro.h"
 #include <cmath>
+#include <Eigen/Dense>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -36,10 +37,12 @@ void Solver::Initialization()
 
     for (int itp = 0; itp < NTP; itp++)
     {
-
+        DataType tau = getLGLPoints<DataType, TORDER>()[itp];
+        DataType t = (tau - 10.)/2.0*config.dt ;
         for (int iele = 0; iele < config.n_ele; iele++)
         {
             Element &elem = elem_pool_old[itp][iele];
+
 #ifdef LAD
             for (int isp = 0; isp < NSP; isp++)
             {
@@ -57,7 +60,7 @@ void Solver::Initialization()
                     // {
                     //     elem.u_consrv[isp][ivar] = DataType(11.0);
                     // }
-                    elem.u_consrv[isp][ivar] = std::sin(2*acos(-1.0)*geom_pool[iele].x[isp]);
+                    elem.u_consrv[isp][ivar] = std::sin(2*acos(-1.0)*(geom_pool[iele].x[isp]-t));
                 }
             }
 #endif
@@ -117,11 +120,21 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
+#ifdef NS
+    const Element &element_l =
+        elem_pool[iele==0 ? iele : iele-1];
+#else
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+#endif
     DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
+#ifdef NS
+    const Element &element_r =
+        elem_pool[iele==config.n_ele-1 ? iele : iele+1];
+#else
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+#endif
     DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType rhs_tmp[NSP][NCONSRV]{};
@@ -269,6 +282,77 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     }
     #endif
 
+    #ifdef NS
+    // add diffusion term 
+    DataType visflux_tmp[NSP][NCONSRV]{};
+    DataType rhs_common_visflux_left[NCONSRV];
+    DataType rhs_common_visflux_right[NCONSRV];
+    DataType globalLift[NSP*NCONSRV]={0.0}; 
+    DataType globalLift_L[NSP*NCONSRV]; 
+    DataType globalLift_R[NSP*NCONSRV]; 
+
+
+    computeBR2Flux(element_l.u_consrv[ORDER],
+        element_l.u_grad_consrv[ORDER],
+        element.u_consrv[0],
+        element.u_grad_consrv[0],
+        local_det_jac_L,
+        local_det_jac,
+        rhs_common_visflux_left,
+        globalLift_L,
+        globalLift,
+        config.vis);
+    computeBR2Flux(element.u_consrv[ORDER],
+        element.u_grad_consrv[ORDER],
+        element_r.u_consrv[0],
+        element_r.u_grad_consrv[0],
+        local_det_jac,
+        local_det_jac_R,
+        rhs_common_visflux_right,
+        globalLift,
+        globalLift_R,
+        config.vis);
+
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    {
+        rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
+        rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
+    }
+
+    // add global lift's contribution on grad
+    DataType grad_u_consrv_[NSP][NCONSRV];
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar]-globalLift[isp*NCONSRV+ivar];
+        }
+    }
+    
+    
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        computeVisFlux(element.u_consrv[isp], 
+            grad_u_consrv_[isp],
+            visflux_tmp[isp], 
+            config.vis);
+    }
+
+    
+
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            for (int jsp = 0; jsp < NSP; jsp++)
+            {
+                rhs_tmp[isp][ivar] -=
+                    getSMatrix<DataType, ORDER>()[jsp][isp] *
+                    visflux_tmp[jsp][ivar];
+            }
+        }
+    }
+    #endif
     
 
     for (int isp = 0; isp < NSP; isp++)
@@ -509,16 +593,44 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
+#ifdef NS
+    const Element &element_l =
+        elem_pool[iele==0 ? iele : iele-1];
+#else
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
+#endif
+    DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
+#ifdef NS
+    const Element &element_r =
+        elem_pool[iele==config.n_ele-1 ? iele : iele+1];
+#else
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
+#endif
+    DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType flux_tmp[NSP][NCONSRV]{};
+    DataType visflux_tmp[NSP][NCONSRV]{};    
 
     for (int isp = 0; isp < NSP; isp++)
     {
         computeFlux(element.u_consrv[isp], flux_tmp[isp], config.a);
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            visflux_tmp[isp][ivar] = DataType(0.0);
+        }
+#ifdef LAD
+        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],visflux_tmp[isp],config.nu);
+#endif
+#ifdef NS
+        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],visflux_tmp[isp],config.vis);
+#endif
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            flux_tmp[isp][ivar] -= visflux_tmp[isp][ivar];
+        }
+
     }
 #if 0
     if (iele == 0)
@@ -568,7 +680,7 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
     // at  j - 1/2
     DataType common_flux_left[NCONSRV];
     computeRiemannFlux(element_l.u_consrv[ORDER], element.u_consrv[0],
-                       common_flux_left, config.a);
+                       common_flux_left, config.a); 
 #if 0
     if (iele == 0)
     {
@@ -603,14 +715,43 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 
     DataType rhs_correction[NSP][NCONSRV]{};
 
+    DataType common_visflux_left[NCONSRV];
+    DataType common_visflux_right[NCONSRV];
+    DataType globalLift[NSP*NCONSRV]={0.0}; 
+    DataType globalLift_L[NSP*NCONSRV]; 
+    DataType globalLift_R[NSP*NCONSRV]; 
+
+
+    computeBR2Flux(element_l.u_consrv[ORDER],
+        element_l.u_grad_consrv[ORDER],
+        element.u_consrv[0],
+        element.u_grad_consrv[0],
+        local_det_jac_L,
+        local_det_jac,
+        common_visflux_left,
+        globalLift_L,
+        globalLift,
+        config.vis);
+    computeBR2Flux(element.u_consrv[ORDER],
+        element.u_grad_consrv[ORDER],
+        element_r.u_consrv[0],
+        element_r.u_grad_consrv[0],
+        local_det_jac,
+        local_det_jac_R,
+        common_visflux_right,
+        globalLift,
+        globalLift_R,
+        config.vis);
+
+
     DataType flux_tmp2[NSP][NCONSRV]{};
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
 
         flux_tmp2[0][ivar] =
-            -1.0 * (common_flux_left[ivar] - flux_tmp[0][ivar]);
+            -1.0 * (common_flux_left[ivar] - common_visflux_left[ivar] - flux_tmp[0][ivar]);
         flux_tmp2[ORDER][ivar] =
-            1.0 * (common_flux_right[ivar] - flux_tmp[ORDER][ivar]);
+            1.0 * (common_flux_right[ivar]- common_visflux_right[ivar] - flux_tmp[ORDER][ivar]);
     }
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -844,6 +985,217 @@ void Solver::timeNewExplicitSchemeK1()
     ofile << elem_pool_old[0][0].u_consrv[0][0] << ","
           << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
 }
+
+void Solver::timeNewExplicitSchemeKN()
+{   
+    DataType alpha = DataType(1.0);
+    auto Tmatrix = getTMatrix<DataType, TORDER>(alpha);
+    auto Smatrix = getSMatrix<DataType, TORDER>();
+
+    Eigen::MatrixXd Mat1_temp(NTP,NTP);
+    Eigen::MatrixXd Mat2_temp(NTP,NTP);
+   
+    for( int itp = 0; itp < NTP; itp++){
+        for( int jtp = 0; jtp < NTP; jtp++){
+            Mat1_temp(itp,jtp) =  Smatrix[jtp][itp];
+            Mat2_temp(itp,jtp) =  Tmatrix[itp][jtp];
+        }
+    }
+    Mat2_temp = (1.0 -config.weight) * Mat1_temp * Mat2_temp;
+    Mat1_temp = (-config.weight) * Mat1_temp;
+
+    Mat1_temp(TORDER,TORDER) += DataType(1.0);
+    Mat2_temp(0,TORDER) += DataType(1.0);
+    
+    Eigen::MatrixXd Matinv1_temp = Mat1_temp.inverse();
+
+    Mat2_temp = Matinv1_temp * Mat2_temp;
+    
+    // compute u*_i
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for(int i=0;i<NTP;i++ ){
+                    elem_pool_tmp[i][iele].u_consrv[isp][ivar] = 0.0;
+                    elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] = 0.0;
+                    for(int j =0; j<NTP;j++){
+                        elem_pool_tmp[i][iele].u_consrv[isp][ivar] += 
+                        elem_pool_old[j][iele].u_consrv[isp][ivar] * Tmatrix[i][j];
+
+                        elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] += 
+                        elem_pool_old[j][iele].u_grad_consrv[isp][ivar] * Tmatrix[i][j];
+
+                    }
+                }
+
+            }
+        }
+    }
+
+    for (int itp = 0; itp < NTP; itp++)
+    {
+        computeRhs(rhs_pool_tmp[itp], elem_pool_tmp[itp]);
+    }
+
+
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int itp = 0; itp < NTP; itp++){
+                    elem_pool_tmp[itp][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[itp][iele].u_consrv[isp][ivar];
+
+                    elem_pool_tmp[itp][iele].u_grad_consrv[isp][ivar] =
+                    elem_pool_old[itp][iele].u_grad_consrv[isp][ivar];
+
+                }
+            }
+        }
+    }
+
+    DataType w = config.weight;
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int itp = 0; itp < NTP; itp++){
+                    elem_pool_old[itp][iele].u_consrv[isp][ivar] = DataType(0.0);
+                    for(int jtp = 0; jtp <NTP; jtp++){
+                        elem_pool_old[itp][iele].u_consrv[isp][ivar] +=
+                        Matinv1_temp(itp,jtp) * rhs_pool_tmp[jtp][iele].rhs[isp][ivar] * config.dt * 0.5
+                        + Mat2_temp(itp,jtp) * elem_pool_tmp[jtp][iele].u_grad_consrv[isp][ivar];
+                    }
+                }
+            }
+        }
+    }
+
+    compGradAndAvg();
+
+    std::ofstream ofile("monitor_point.csv", std::ios::app);
+    if (!ofile)
+    {
+        std::cerr << "Error: Failed to create file." << std::endl;
+        return;
+    }
+    ofile << elem_pool_old[0][0].u_consrv[0][0] << ","
+          << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
+}
+
+void Solver::timeNewImplicitSchemeKN()
+{   
+    DataType alpha = DataType(1.0);
+    auto Tmatrix = getTMatrix<DataType, TORDER>(alpha);
+    auto Smatrix = getSMatrix<DataType, TORDER>();
+
+    Eigen::MatrixXd Mat1(NTP,NTP);
+    Eigen::MatrixXd Mat2(NTP,NTP);
+   
+    for( int itp = 0; itp < NTP; itp++){
+        for( int jtp = 0; jtp < NTP; jtp++){
+            Mat1(itp,jtp) =  Smatrix[jtp][itp];
+            Mat2(itp,jtp) =  Tmatrix[itp][jtp];
+        }
+    }
+    Mat2 = (1.0 -config.weight) * Mat1 * Mat2;
+    Mat1 = (-config.weight) * Mat1;
+
+    Mat1(TORDER,TORDER) += DataType(1.0);
+    Mat2(0,TORDER) += DataType(1.0);
+    
+    Mat1 = Mat1.inverse();
+
+    Mat2 = Mat1 * Mat2;
+    
+    // compute u*_i
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for(int i=0;i<NTP;i++ ){
+                    elem_pool_tmp[i][iele].u_consrv[isp][ivar] = 0.0;
+                    elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] = 0.0;
+                    for(int j =0; j<NTP;j++){
+                        elem_pool_tmp[i][iele].u_consrv[isp][ivar] += 
+                        elem_pool_old[j][iele].u_consrv[isp][ivar] * Tmatrix[i][j];
+
+                        elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] += 
+                        elem_pool_old[j][iele].u_grad_consrv[isp][ivar] * Tmatrix[i][j];
+
+                    }
+                }
+
+            }
+        }
+    }
+
+    for (int itp = 0; itp < NTP; itp++)
+    {
+        computeRhs(rhs_pool_tmp[itp], elem_pool_tmp[itp]);
+    }
+
+
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int itp = 0; itp < NTP; itp++){
+                    elem_pool_tmp[itp][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[itp][iele].u_consrv[isp][ivar];
+
+                    elem_pool_tmp[itp][iele].u_grad_consrv[isp][ivar] =
+                    elem_pool_old[itp][iele].u_grad_consrv[isp][ivar];
+
+                }
+            }
+        }
+    }
+
+    DataType w = config.weight;
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int itp = 0; itp < NTP; itp++){
+                    elem_pool_old[itp][iele].u_consrv[isp][ivar] = DataType(0.0);
+                    for(int jtp = 0; jtp <NTP; jtp++){
+                        elem_pool_old[itp][iele].u_consrv[isp][ivar] +=
+                        Mat1(itp,jtp) * rhs_pool_tmp[jtp][iele].rhs[isp][ivar] * config.dt * 0.5
+                        + Mat2(itp,jtp) * elem_pool_tmp[jtp][iele].u_grad_consrv[isp][ivar];
+                    }
+                }
+            }
+        }
+    }
+
+    compGradAndAvg();
+
+    std::ofstream ofile("monitor_point.csv", std::ios::app);
+    if (!ofile)
+    {
+        std::cerr << "Error: Failed to create file." << std::endl;
+        return;
+    }
+    ofile << elem_pool_old[0][0].u_consrv[0][0] << ","
+          << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
+}
+
+
+
 
 void Solver::timeRK1()
 {

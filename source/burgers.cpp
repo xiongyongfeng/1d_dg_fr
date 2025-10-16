@@ -36,3 +36,39 @@ void computeFlux(const DataType (&u)[NCONSRV], DataType (&flux)[NCONSRV],
         flux[ivar] = 0.5 * u[ivar] * u[ivar];
     }
 }
+
+void computeVisFlux(const DataType (&u) [NCONSRV], const DataType (&u_grad)[NCONSRV],
+                 DataType (&flux)[NCONSRV], DataType nu)
+{
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    {
+        flux[ivar] = DataType(0.0);
+    }
+}
+
+void computeBR2Flux(const DataType (&uL) [NCONSRV], 
+                    const DataType (&uL_grad)[NCONSRV],
+                    const DataType (&uR) [NCONSRV], 
+                    const DataType (&uR_grad)[NCONSRV],
+                    const DataType local_det_jac_L,
+                    const DataType local_det_jac_R,
+                    DataType (&flux)[NCONSRV], 
+                    DataType (&globalLift_L)[NSP*NCONSRV],
+                    DataType (&globalLift_R)[NSP*NCONSRV],
+                    DataType nu )
+{
+    for (int isp = 0; isp < NSP; isp++)
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {   
+            globalLift_L[isp*NCONSRV+ivar] = DataType(0.0);
+            globalLift_R[isp*NCONSRV+ivar] = DataType(0.0);
+        }
+    }
+
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    { 
+        flux[ivar] = DataType(0.0);
+    }
+
+}                    

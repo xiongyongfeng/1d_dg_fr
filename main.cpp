@@ -86,7 +86,7 @@ int main(int argc, char **argv)
         }
         if (config.time_scheme_type == 1)
         {
-            solver.timeNewExplicitSchemeK1();
+            solver.timeNewExplicitSchemeKN();
         }
         current_time += config.dt;
 
