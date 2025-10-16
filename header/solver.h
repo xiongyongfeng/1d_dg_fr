@@ -49,6 +49,7 @@ class Solver
     };
 
     void Initialization();
+    void init_RK3(int itp);
     void computeRhs(Rhs *, const Element *);
     void computeElemRhsDG(Rhs *, const Element *, int);
     void computeElemRhsFR(Rhs *, const Element *, int);
