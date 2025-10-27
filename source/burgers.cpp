@@ -1,4 +1,5 @@
 #include "burgers.h"
+#include "constants.h"
 #include "macro.h"
 
 void Primtv2Consrv(const DataType (&primtv)[NPRIMTV],
@@ -37,8 +38,9 @@ void computeFlux(const DataType (&u)[NCONSRV], DataType (&flux)[NCONSRV],
     }
 }
 
-void computeVisFlux(const DataType (&u) [NCONSRV], const DataType (&u_grad)[NCONSRV],
-                 DataType (&flux)[NCONSRV], DataType nu)
+void computeVisFlux(const DataType (&u)[NCONSRV],
+                    const DataType (&u_grad)[NCONSRV],
+                    DataType (&flux)[NCONSRV], DataType nu)
 {
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
@@ -46,29 +48,28 @@ void computeVisFlux(const DataType (&u) [NCONSRV], const DataType (&u_grad)[NCON
     }
 }
 
-void computeBR2Flux(const DataType (&uL) [NCONSRV], 
+void computeBR2Flux(const DataType (&uL)[NCONSRV],
                     const DataType (&uL_grad)[NCONSRV],
-                    const DataType (&uR) [NCONSRV], 
+                    const DataType (&uR)[NCONSRV],
                     const DataType (&uR_grad)[NCONSRV],
                     const DataType local_det_jac_L,
-                    const DataType local_det_jac_R,
-                    DataType (&flux)[NCONSRV], 
-                    DataType (&globalLift_L)[NSP*NCONSRV],
-                    DataType (&globalLift_R)[NSP*NCONSRV],
-                    DataType nu )
+                    const DataType local_det_jac_R, DataType (&flux)[NCONSRV],
+                    DataType (&globalLift_L)[NSP * NCONSRV],
+                    DataType (&globalLift_R)[NSP * NCONSRV],
+                    const Constant<DataType, ORDER> &Constant_s, DataType nu)
 {
+    (void)Constant_s;
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {   
-            globalLift_L[isp*NCONSRV+ivar] = DataType(0.0);
-            globalLift_R[isp*NCONSRV+ivar] = DataType(0.0);
+        {
+            globalLift_L[isp * NCONSRV + ivar] = DataType(0.0);
+            globalLift_R[isp * NCONSRV + ivar] = DataType(0.0);
         }
     }
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
-    { 
+    {
         flux[ivar] = DataType(0.0);
     }
-
-}                    
+}

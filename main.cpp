@@ -81,8 +81,8 @@ int main(int argc, char **argv)
 
         if (config.time_scheme_type == 0)
         {
-            // solver.timeRK3();
-            solver.timeRK1();
+            solver.timeRK3();
+            // solver.timeRK1();
         }
         if (config.time_scheme_type == 1)
         {
@@ -142,5 +142,9 @@ int main(int argc, char **argv)
 
     //////////////////////////////
     std::cout << "Finish Computation!" << std::endl;
+
+    Constant<double, 2> cc;
+    cc.show(std::cout);
+
     return 0;
 }

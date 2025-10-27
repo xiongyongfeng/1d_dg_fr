@@ -1,15 +1,16 @@
 #include "solver.h"
 #include "constants.h"
 #include "element.h"
+#include "initializer.h"
 #include "macro.h"
-#include <cmath>
 #include <Eigen/Dense>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <valarray>
-#include "initializer.hpp"
 #if defined(NS)
 #include "ns.h"
 #endif
@@ -38,7 +39,8 @@ void Solver::Initialization()
 
     for (int itp = 0; itp < NTP; itp++)
     {
-        DataType t = (getLGLPoints<DataType, TORDER>()[itp] + 1.0) / 2.0*config.dt ;
+        DataType t =
+            (getLGLPoints<DataType, TORDER>()[itp] + 1.0) / 2.0 * config.dt;
         for (int iele = 0; iele < config.n_ele; iele++)
         {
             Element &elem = elem_pool_old[itp][iele];
@@ -49,7 +51,7 @@ void Solver::Initialization()
                 DataType x = geom_pool[iele].x[isp];
                 for (int ivar = 0; ivar < NCONSRV; ivar++)
                 {
-                    elem.u_consrv[isp][ivar] = exact_lad(x,0)[ivar];
+                    elem.u_consrv[isp][ivar] = exact_lad(x, 0)[ivar];
                 }
             }
 #endif
@@ -59,46 +61,50 @@ void Solver::Initialization()
         }
     }
 
-    for (int itp = 0; itp < NTP; itp++) // init  the first step with RK4 
+    for (int itp = 0; itp < NTP; itp++) // init  the first step with RK4
     {
-        DataType t = (getLGLPoints<DataType, TORDER>()[itp]+ 1.0) / 2.0*config.dt ;
+        DataType t =
+            (getLGLPoints<DataType, TORDER>()[itp] + 1.0) / 2.0 * config.dt;
         for (int iele = 0; iele < config.n_ele; iele++)
         {
             Element &elem = elem_pool_old[itp][iele];
 
-
 #ifdef BURGERS
-        if(itp == 0){
-        //if(1){
-            for (int isp = 0; isp < NSP; isp++)
+            if (itp == 0)
             {
-                for (int ivar = 0; ivar < NCONSRV; ivar++)
+                // if(1){
+                for (int isp = 0; isp < NSP; isp++)
                 {
-                    DataType x = geom_pool[iele].x[isp];
-                    elem.u_consrv[isp][ivar] = u0_burgers(x)[ivar];
+                    for (int ivar = 0; ivar < NCONSRV; ivar++)
+                    {
+                        DataType x = geom_pool[iele].x[isp];
+                        elem.u_consrv[isp][ivar] = u0_burgers(x)[ivar];
+                    }
                 }
             }
-        }
-        else {
-            init_RK3(itp);
-        }
+            else
+            {
+                init_RK3(itp);
+            }
 
 #endif
 
 #ifdef NS
-         if(itp == 0){   
-            for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
+            if (itp == 0)
             {
-                DataType x = geom_pool[iele].x[isp];
-                for (int ivar = 0; ivar < NCONSRV; ivar++)
-                {       
-                    elem.u_consrv[isp][ivar] = u0_sod(x)[ivar];
-                }    
+                for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
+                {
+                    DataType x = geom_pool[iele].x[isp];
+                    for (int ivar = 0; ivar < NCONSRV; ivar++)
+                    {
+                        elem.u_consrv[isp][ivar] = u0_sod(x)[ivar];
+                    }
+                }
             }
-        }
-        else{
-            init_RK3(itp);
-        }
+            else
+            {
+                init_RK3(itp);
+            }
 #endif
 
             computeElementGrad(iele);
@@ -111,26 +117,27 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
 #ifdef NS
-    const Element &element_l =
-        elem_pool[iele==0 ? iele : iele-1];
+    const Element &element_l = elem_pool[iele == 0 ? iele : iele - 1];
 #else
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
 #endif
-    DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_L =
+        geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
 #ifdef NS
     const Element &element_r =
-        elem_pool[iele==config.n_ele-1 ? iele : iele+1];
+        elem_pool[iele == config.n_ele - 1 ? iele : iele + 1];
 #else
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 #endif
-    DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_R =
+        geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType rhs_tmp[NSP][NCONSRV]{};
 
     DataType flux_tmp[NSP][NCONSRV]{};
-    
+
     for (int isp = 0; isp < NSP; isp++)
     {
         computeFlux(element.u_consrv[isp], flux_tmp[isp], config.a);
@@ -160,8 +167,7 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_prediction[isp][ivar] +=
-                    getSMatrix<DataType, ORDER>()[jsp][isp] *
-                    flux_tmp[jsp][ivar];
+                    Constant_s.getSMatrix()[jsp][isp] * flux_tmp[jsp][ivar];
             }
             rhs_tmp[isp][ivar] += rhs_prediction[isp][ivar];
         }
@@ -198,38 +204,23 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         rhs_tmp[ORDER][ivar] -= rhs_common_flux_right[ivar];
     }
 
-
-
 #ifdef LAD
-    // add diffusion term 
+    // add diffusion term
     DataType visflux_tmp[NSP][NCONSRV]{};
     DataType rhs_common_visflux_left[NCONSRV];
     DataType rhs_common_visflux_right[NCONSRV];
-    DataType globalLift[NSP*NCONSRV]={0.0}; 
-    DataType globalLift_L[NSP*NCONSRV]; 
-    DataType globalLift_R[NSP*NCONSRV]; 
+    DataType globalLift[NSP * NCONSRV] = {0.0};
+    DataType globalLift_L[NSP * NCONSRV];
+    DataType globalLift_R[NSP * NCONSRV];
 
-
-    computeBR2Flux(element_l.u_consrv[ORDER],
-        element_l.u_grad_consrv[ORDER],
-        element.u_consrv[0],
-        element.u_grad_consrv[0],
-        local_det_jac_L,
-        local_det_jac,
-        rhs_common_visflux_left,
-        globalLift_L,
-        globalLift,
-        config.nu);
-    computeBR2Flux(element.u_consrv[ORDER],
-        element.u_grad_consrv[ORDER],
-        element_r.u_consrv[0],
-        element_r.u_grad_consrv[0],
-        local_det_jac,
-        local_det_jac_R,
-        rhs_common_visflux_right,
-        globalLift,
-        globalLift_R,
-        config.nu);
+    computeBR2Flux(element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+                   element.u_consrv[0], element.u_grad_consrv[0],
+                   local_det_jac_L, local_det_jac, rhs_common_visflux_left,
+                   globalLift_L, globalLift, Constant_s, config.nu);
+    computeBR2Flux(element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                   element_r.u_consrv[0], element_r.u_grad_consrv[0],
+                   local_det_jac, local_det_jac_R, rhs_common_visflux_right,
+                   globalLift, globalLift_R, Constant_s, config.nu);
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
@@ -243,20 +234,16 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar]-globalLift[isp*NCONSRV+ivar];
+            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar] -
+                                        globalLift[isp * NCONSRV + ivar];
         }
     }
-    
-    
+
     for (int isp = 0; isp < NSP; isp++)
     {
-        computeVisFlux(element.u_consrv[isp], 
-            grad_u_consrv_[isp],
-            visflux_tmp[isp], 
-            config.nu);
+        computeVisFlux(element.u_consrv[isp], grad_u_consrv_[isp],
+                       visflux_tmp[isp], config.nu);
     }
-
-    
 
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -265,43 +252,29 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_tmp[isp][ivar] -=
-                    getSMatrix<DataType, ORDER>()[jsp][isp] *
-                    visflux_tmp[jsp][ivar];
+                    Constant_s.getSMatrix()[jsp][isp] * visflux_tmp[jsp][ivar];
             }
         }
     }
-    #endif
+#endif
 
-    #ifdef NS
-    // add diffusion term 
+#ifdef NS
+    // add diffusion term
     DataType visflux_tmp[NSP][NCONSRV]{};
     DataType rhs_common_visflux_left[NCONSRV];
     DataType rhs_common_visflux_right[NCONSRV];
-    DataType globalLift[NSP*NCONSRV]={0.0}; 
-    DataType globalLift_L[NSP*NCONSRV]; 
-    DataType globalLift_R[NSP*NCONSRV]; 
+    DataType globalLift[NSP * NCONSRV] = {0.0};
+    DataType globalLift_L[NSP * NCONSRV];
+    DataType globalLift_R[NSP * NCONSRV];
 
-
-    computeBR2Flux(element_l.u_consrv[ORDER],
-        element_l.u_grad_consrv[ORDER],
-        element.u_consrv[0],
-        element.u_grad_consrv[0],
-        local_det_jac_L,
-        local_det_jac,
-        rhs_common_visflux_left,
-        globalLift_L,
-        globalLift,
-        config.vis);
-    computeBR2Flux(element.u_consrv[ORDER],
-        element.u_grad_consrv[ORDER],
-        element_r.u_consrv[0],
-        element_r.u_grad_consrv[0],
-        local_det_jac,
-        local_det_jac_R,
-        rhs_common_visflux_right,
-        globalLift,
-        globalLift_R,
-        config.vis);
+    computeBR2Flux(element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+                   element.u_consrv[0], element.u_grad_consrv[0],
+                   local_det_jac_L, local_det_jac, rhs_common_visflux_left,
+                   globalLift_L, globalLift, Constant_s, config.vis);
+    computeBR2Flux(element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                   element_r.u_consrv[0], element_r.u_grad_consrv[0],
+                   local_det_jac, local_det_jac_R, rhs_common_visflux_right,
+                   globalLift, globalLift_R, Constant_s, config.vis);
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
@@ -315,20 +288,16 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar]-globalLift[isp*NCONSRV+ivar];
+            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar] -
+                                        globalLift[isp * NCONSRV + ivar];
         }
     }
-    
-    
+
     for (int isp = 0; isp < NSP; isp++)
     {
-        computeVisFlux(element.u_consrv[isp], 
-            grad_u_consrv_[isp],
-            visflux_tmp[isp], 
-            config.vis);
+        computeVisFlux(element.u_consrv[isp], grad_u_consrv_[isp],
+                       visflux_tmp[isp], config.vis);
     }
-
-    
 
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -337,13 +306,11 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_tmp[isp][ivar] -=
-                    getSMatrix<DataType, ORDER>()[jsp][isp] *
-                    visflux_tmp[jsp][ivar];
+                    Constant_s.getSMatrix()[jsp][isp] * visflux_tmp[jsp][ivar];
             }
         }
     }
-    #endif
-    
+#endif
 
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -354,7 +321,7 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             {
                 rhs_pool[iele].rhs[isp][ivar] +=
                     invertMatrix<DataType, ORDER>(
-                        getMMatrix<DataType, ORDER>())[isp][jsp] *
+                        Constant_s.getMMatrix())[isp][jsp] *
                     rhs_tmp[jsp][ivar] / local_det_jac;
             }
         }
@@ -371,9 +338,8 @@ void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
         {
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                rhs_predict[isp][ivar] -=
-                    getDMatrix<DataType, ORDER>()[isp][jsp] * flux[jsp][ivar] /
-                    local_det_jac;
+                rhs_predict[isp][ivar] -= Constant_s.getDMatrix()[isp][jsp] *
+                                          flux[jsp][ivar] / local_det_jac;
             }
         }
     }
@@ -392,7 +358,7 @@ void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_predict[isp][ivar] -=
-                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 0.5 *
+                    2.0 * Constant_s.getDMatrix()[isp][jsp] * 0.5 *
                     (flux[jsp][ivar] + flux[isp][ivar]) / local_det_jac;
             }
         }
@@ -407,7 +373,7 @@ void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
             for (int jsp = 0; jsp < NSP; jsp++)
             {
                 rhs_predict[isp][ivar] -=
-                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 1.0 / 6.0 *
+                    2.0 * Constant_s.getDMatrix()[isp][jsp] * 1.0 / 6.0 *
                     (consrv[isp][ivar] * consrv[isp][ivar] +
                      consrv[jsp][ivar] * consrv[isp][ivar] +
                      consrv[jsp][ivar] * consrv[jsp][ivar]) /
@@ -518,18 +484,16 @@ void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
             }
 
             DataType fs_1 = z2_bar * z3_bar_log;
-            rhs_predict[isp][0] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_1 / local_det_jac;
+            rhs_predict[isp][0] -=
+                2.0 * Constant_s.getDMatrix()[isp][jsp] * fs_1 / local_det_jac;
 
             DataType z3_bar = 0.5 * (z3_L + z3_R);
             DataType z1_bar = 0.5 * (z1_L + z1_R);
 
             DataType fs_2 = z3_bar / z1_bar + z2_bar / z1_bar * fs_1;
 
-            rhs_predict[isp][1] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_2 / local_det_jac;
+            rhs_predict[isp][1] -=
+                2.0 * Constant_s.getDMatrix()[isp][jsp] * fs_2 / local_det_jac;
 
             DataType z1_bar_log;
             if (std::abs(z1_R - z1_L) / (std::abs(z1_L) + 1e-12) < 1e-6)
@@ -544,9 +508,8 @@ void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
                 0.5 * z2_bar / z1_bar *
                 ((GAMMA + 1.0) / (GAMMA - 1.0) * z3_bar_log / z1_bar_log +
                  fs_2);
-            rhs_predict[isp][2] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_3 / local_det_jac;
+            rhs_predict[isp][2] -=
+                2.0 * Constant_s.getDMatrix()[isp][jsp] * fs_3 / local_det_jac;
         }
     }
 #endif
@@ -584,24 +547,25 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
     const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
 #ifdef NS
-    const Element &element_l =
-        elem_pool[iele==0 ? iele : iele-1];
+    const Element &element_l = elem_pool[iele == 0 ? iele : iele - 1];
 #else
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
 #endif
-    DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_L =
+        geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
 #ifdef NS
     const Element &element_r =
-        elem_pool[iele==config.n_ele-1 ? iele : iele+1];
+        elem_pool[iele == config.n_ele - 1 ? iele : iele + 1];
 #else
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
 #endif
-    DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_R =
+        geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType flux_tmp[NSP][NCONSRV]{};
-    DataType visflux_tmp[NSP][NCONSRV]{};    
+    DataType visflux_tmp[NSP][NCONSRV]{};
 
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -611,16 +575,17 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
             visflux_tmp[isp][ivar] = DataType(0.0);
         }
 #ifdef LAD
-        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],visflux_tmp[isp],config.nu);
+        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],
+                       visflux_tmp[isp], config.nu);
 #endif
 #ifdef NS
-        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],visflux_tmp[isp],config.vis);
+        computeVisFlux(element.u_consrv[isp], element.u_grad_consrv[isp],
+                       visflux_tmp[isp], config.vis);
 #endif
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
             flux_tmp[isp][ivar] -= visflux_tmp[isp][ivar];
         }
-
     }
 #if 0
     if (iele == 0)
@@ -670,7 +635,7 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
     // at  j - 1/2
     DataType common_flux_left[NCONSRV];
     computeRiemannFlux(element_l.u_consrv[ORDER], element.u_consrv[0],
-                       common_flux_left, config.a); 
+                       common_flux_left, config.a);
 #if 0
     if (iele == 0)
     {
@@ -707,41 +672,29 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 
     DataType common_visflux_left[NCONSRV];
     DataType common_visflux_right[NCONSRV];
-    DataType globalLift[NSP*NCONSRV]={0.0}; 
-    DataType globalLift_L[NSP*NCONSRV]; 
-    DataType globalLift_R[NSP*NCONSRV]; 
+    DataType globalLift[NSP * NCONSRV] = {0.0};
+    DataType globalLift_L[NSP * NCONSRV];
+    DataType globalLift_R[NSP * NCONSRV];
 
-
-    computeBR2Flux(element_l.u_consrv[ORDER],
-        element_l.u_grad_consrv[ORDER],
-        element.u_consrv[0],
-        element.u_grad_consrv[0],
-        local_det_jac_L,
-        local_det_jac,
-        common_visflux_left,
-        globalLift_L,
-        globalLift,
-        config.vis);
-    computeBR2Flux(element.u_consrv[ORDER],
-        element.u_grad_consrv[ORDER],
-        element_r.u_consrv[0],
-        element_r.u_grad_consrv[0],
-        local_det_jac,
-        local_det_jac_R,
-        common_visflux_right,
-        globalLift,
-        globalLift_R,
-        config.vis);
-
+    computeBR2Flux(element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+                   element.u_consrv[0], element.u_grad_consrv[0],
+                   local_det_jac_L, local_det_jac, common_visflux_left,
+                   globalLift_L, globalLift, Constant_s, config.vis);
+    computeBR2Flux(element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                   element_r.u_consrv[0], element_r.u_grad_consrv[0],
+                   local_det_jac, local_det_jac_R, common_visflux_right,
+                   globalLift, globalLift_R, Constant_s, config.vis);
 
     DataType flux_tmp2[NSP][NCONSRV]{};
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
 
         flux_tmp2[0][ivar] =
-            -1.0 * (common_flux_left[ivar] - common_visflux_left[ivar] - flux_tmp[0][ivar]);
+            -1.0 * (common_flux_left[ivar] - common_visflux_left[ivar] -
+                    flux_tmp[0][ivar]);
         flux_tmp2[ORDER][ivar] =
-            1.0 * (common_flux_right[ivar]- common_visflux_right[ivar] - flux_tmp[ORDER][ivar]);
+            1.0 * (common_flux_right[ivar] - common_visflux_right[ivar] -
+                   flux_tmp[ORDER][ivar]);
     }
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -760,7 +713,7 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
                 {
                     rhs_correction[isp][ivar] -=
                         invertMatrix<DataType, ORDER>(
-                            getMMatrix<DataType, ORDER>())[isp][jsp] *
+                            Constant_s.getMMatrix())[isp][jsp] *
                         flux_tmp2[jsp][ivar] / local_det_jac;
                 }
             }
@@ -913,13 +866,11 @@ void Solver::timeNewExplicitSchemeK1()
                     -elem_pool_old[0][iele].u_consrv[isp][ivar] +
                     2.0 * elem_pool_old[1][iele].u_consrv[isp][ivar];
 
-                elem_pool_tmp[0][iele].u_grad_consrv[isp][ivar] = 
+                elem_pool_tmp[0][iele].u_grad_consrv[isp][ivar] =
                     elem_pool_old[1][iele].u_grad_consrv[isp][ivar];
-                elem_pool_tmp[1][iele].u_grad_consrv[isp][ivar] = 
+                elem_pool_tmp[1][iele].u_grad_consrv[isp][ivar] =
                     -elem_pool_old[0][iele].u_grad_consrv[isp][ivar] +
                     2.0 * elem_pool_old[1][iele].u_grad_consrv[isp][ivar];
-
-
             }
         }
     }
@@ -977,30 +928,33 @@ void Solver::timeNewExplicitSchemeK1()
 }
 
 void Solver::timeNewExplicitSchemeKN()
-{   
+{
     DataType alpha = DataType(1.0);
-    auto Tmatrix = getTMatrix<DataType, TORDER>(alpha);
-    auto Smatrix = getSMatrix<DataType, TORDER>();
+    Constant_t.valueTMatrix(alpha);
+    auto Tmatrix = Constant_t.getTMatrix();
+    auto Smatrix = Constant_t.getSMatrix();
 
-    Eigen::MatrixXd Mat1(NTP,NTP);
-    Eigen::MatrixXd Mat2(NTP,NTP);
-   
-    for( int itp = 0; itp < NTP; itp++){
-        for( int jtp = 0; jtp < NTP; jtp++){
-            Mat1(itp,jtp) =  Smatrix[jtp][itp];
-            Mat2(itp,jtp) =  Tmatrix[itp][jtp];
+    Eigen::MatrixXd Mat1(NTP, NTP);
+    Eigen::MatrixXd Mat2(NTP, NTP);
+
+    for (int itp = 0; itp < NTP; itp++)
+    {
+        for (int jtp = 0; jtp < NTP; jtp++)
+        {
+            Mat1(itp, jtp) = Smatrix[jtp][itp];
+            Mat2(itp, jtp) = Tmatrix[itp][jtp];
         }
     }
     Mat2 = (1.0 - config.weight) * Mat1 * Mat2;
     Mat1 = (-config.weight) * Mat1;
 
-    Mat1(TORDER,TORDER) += DataType(1.0);
-    Mat2(0,TORDER) += DataType(1.0);
-    
+    Mat1(TORDER, TORDER) += DataType(1.0);
+    Mat2(0, TORDER) += DataType(1.0);
+
     Eigen::MatrixXd Matinv1 = Mat1.inverse();
 
     Mat2 = Matinv1 * Mat2;
-    
+
     // compute u*_i
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -1008,19 +962,21 @@ void Solver::timeNewExplicitSchemeKN()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                for(int i=0;i<NTP;i++ ){
+                for (int i = 0; i < NTP; i++)
+                {
                     elem_pool_tmp[i][iele].u_consrv[isp][ivar] = 0.0;
                     elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] = 0.0;
-                    for(int j =0; j<NTP;j++){
-                        elem_pool_tmp[i][iele].u_consrv[isp][ivar] += 
-                        elem_pool_old[j][iele].u_consrv[isp][ivar] * Tmatrix[i][j];
+                    for (int j = 0; j < NTP; j++)
+                    {
+                        elem_pool_tmp[i][iele].u_consrv[isp][ivar] +=
+                            elem_pool_old[j][iele].u_consrv[isp][ivar] *
+                            Tmatrix[i][j];
 
-                        elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] += 
-                        elem_pool_old[j][iele].u_grad_consrv[isp][ivar] * Tmatrix[i][j];
-
+                        elem_pool_tmp[i][iele].u_grad_consrv[isp][ivar] +=
+                            elem_pool_old[j][iele].u_grad_consrv[isp][ivar] *
+                            Tmatrix[i][j];
                     }
                 }
-
             }
         }
     }
@@ -1030,16 +986,16 @@ void Solver::timeNewExplicitSchemeKN()
         computeRhs(rhs_pool_tmp[itp], elem_pool_tmp[itp]);
     }
 
-
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                for (int itp = 0; itp < NTP; itp++){
+                for (int itp = 0; itp < NTP; itp++)
+                {
                     elem_pool_tmp[itp][iele].u_consrv[isp][ivar] =
-                    elem_pool_old[itp][iele].u_consrv[isp][ivar];
+                        elem_pool_old[itp][iele].u_consrv[isp][ivar];
                 }
             }
         }
@@ -1052,12 +1008,18 @@ void Solver::timeNewExplicitSchemeKN()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                for (int itp = 0; itp < NTP; itp++){
-                    elem_pool_old[itp][iele].u_consrv[isp][ivar] = DataType(0.0);
-                    for(int jtp = 0; jtp <NTP; jtp++){
+                for (int itp = 0; itp < NTP; itp++)
+                {
+                    elem_pool_old[itp][iele].u_consrv[isp][ivar] =
+                        DataType(0.0);
+                    for (int jtp = 0; jtp < NTP; jtp++)
+                    {
                         elem_pool_old[itp][iele].u_consrv[isp][ivar] +=
-                        Matinv1(itp,jtp) * rhs_pool_tmp[jtp][iele].rhs[isp][ivar] * config.dt * 0.5
-                        + Mat2(itp,jtp) * elem_pool_tmp[jtp][iele].u_consrv[isp][ivar];
+                            Matinv1(itp, jtp) *
+                                rhs_pool_tmp[jtp][iele].rhs[isp][ivar] *
+                                config.dt * 0.5 +
+                            Mat2(itp, jtp) *
+                                elem_pool_tmp[jtp][iele].u_consrv[isp][ivar];
                     }
                 }
             }
@@ -1076,17 +1038,12 @@ void Solver::timeNewExplicitSchemeKN()
           << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
 }
 
-
-
-
-
-
 void Solver::timeRK1()
 {
 
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
-    {   
+    {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -1198,12 +1155,13 @@ void Solver::timeRK3()
 }
 
 void Solver::init_RK3(int itp)
-{   
-    if(itp<1){
+{
+    if (itp < 1)
+    {
         return;
     }
-    
-    computeRhs(rhs_pool_tmp[itp-1], elem_pool_old[itp-1]);
+
+    computeRhs(rhs_pool_tmp[itp - 1], elem_pool_old[itp - 1]);
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -1211,32 +1169,32 @@ void Solver::init_RK3(int itp)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_tmp[itp-1][iele].u_consrv[isp][ivar] =
-                    elem_pool_old[itp-1][iele].u_consrv[isp][ivar] +
-                    rhs_pool_tmp[itp-1][iele].rhs[isp][ivar] * config.dt;
+                elem_pool_tmp[itp - 1][iele].u_consrv[isp][ivar] =
+                    elem_pool_old[itp - 1][iele].u_consrv[isp][ivar] +
+                    rhs_pool_tmp[itp - 1][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
 
-    computeRhs(rhs_pool_tmp[itp-1], elem_pool_tmp[itp-1]);
+    computeRhs(rhs_pool_tmp[itp - 1], elem_pool_tmp[itp - 1]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                elem_pool_tmp[itp-1][iele].u_consrv[isp][ivar] =
+                elem_pool_tmp[itp - 1][iele].u_consrv[isp][ivar] =
                     DataType(0.75) *
-                        elem_pool_old[itp-1][iele].u_consrv[isp][ivar] +
+                        elem_pool_old[itp - 1][iele].u_consrv[isp][ivar] +
                     DataType(0.25) *
-                        elem_pool_tmp[itp-1][iele].u_consrv[isp][ivar] +
-                    DataType(0.25) * rhs_pool_tmp[itp-1][iele].rhs[isp][ivar] *
-                        config.dt;
+                        elem_pool_tmp[itp - 1][iele].u_consrv[isp][ivar] +
+                    DataType(0.25) *
+                        rhs_pool_tmp[itp - 1][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
 
-    computeRhs(rhs_pool_tmp[itp-1], elem_pool_tmp[itp-1]);
+    computeRhs(rhs_pool_tmp[itp - 1], elem_pool_tmp[itp - 1]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
@@ -1245,16 +1203,15 @@ void Solver::init_RK3(int itp)
             {
                 elem_pool_old[itp][iele].u_consrv[isp][ivar] =
                     DataType(1.0) / DataType(3.0) *
-                        elem_pool_old[itp-1][iele].u_consrv[isp][ivar] +
+                        elem_pool_old[itp - 1][iele].u_consrv[isp][ivar] +
                     DataType(2.0) / DataType(3.0) *
-                        elem_pool_tmp[itp-1][iele].u_consrv[isp][ivar] +
+                        elem_pool_tmp[itp - 1][iele].u_consrv[isp][ivar] +
                     DataType(2.0) / DataType(3.0) *
-                        rhs_pool_tmp[itp-1][iele].rhs[isp][ivar] * config.dt;
+                        rhs_pool_tmp[itp - 1][iele].rhs[isp][ivar] * config.dt;
             }
         }
     }
     compGradAndAvg();
-
 }
 
 void Solver::computeElementGrad(int ielem)
@@ -1274,7 +1231,7 @@ void Solver::computeElementGrad(int ielem)
                 for (int jsp = 0; jsp < NSP; jsp++)
                 {
                     element.u_grad_consrv[isp][ivar] +=
-                        getDMatrix<DataType, ORDER>()[isp][jsp] *
+                        Constant_s.getDMatrix()[isp][jsp] *
                         element.u_consrv[jsp][ivar] / local_det_jac;
                 }
             }
@@ -1333,6 +1290,8 @@ void Solver::Output(const std::string &filename)
                 elem_primtv[isp][ivar] = primtv[ivar];
             }
         }
+
+        ofile << std::scientific << std::setprecision(12);
         for (int ivar = 0; ivar < NPRIMTV; ivar++)
         {
             for (int isp = 0; isp < NSP; isp++)
@@ -1370,6 +1329,7 @@ void Solver::OutputAvg(const std::string &filename)
 
         Consrv2Primtv(elem.u_avg, elem_primtv_ave);
 
+        ofile << std::scientific << std::setprecision(12);
         for (int ivar = 0; ivar < NPRIMTV; ivar++)
         {
             ofile << elem_primtv_ave[ivar] << ",";

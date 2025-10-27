@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include "constants.h"
 #include "element.h"
 #include "macro.h"
 class Solver
@@ -10,11 +11,10 @@ class Solver
     Element **elem_pool_tmp;
     Rhs **rhs_pool_tmp;
     Config config;
+    Constant<DataType, ORDER> Constant_s;
+    Constant<DataType, TORDER> Constant_t;
 
-
- public:
-    
-
+  public:
   public:
     Solver(const Config &config, int nelem)
     {

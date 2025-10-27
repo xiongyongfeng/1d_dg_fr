@@ -89,44 +89,46 @@ void computeFlux(const DataType (&u)[NCONSRV], DataType (&flux)[NCONSRV],
     flux[2] = (u[2] + primtv[2]) * primtv[1];
 }
 
-void computeVisFlux(const DataType (&u) [NCONSRV], const DataType (&u_grad)[NCONSRV],
-                 DataType (&flux)[NCONSRV], DataType vis_0)
+void computeVisFlux(const DataType (&u)[NCONSRV],
+                    const DataType (&u_grad)[NCONSRV],
+                    DataType (&flux)[NCONSRV], DataType vis_0)
 {
     DataType primtv[NPRIMTV];
     Consrv2Primtv(u, primtv);
-    
-    DataType rhom       = 1.0/u[0];
-    DataType drho_dx    = u_grad[0]; 
-    DataType du_dx      = (u_grad[1] - primtv[1] * drho_dx) * rhom;   
-    DataType dT_dx      = (u_grad[2] - u[2]*u_grad[0]*rhom - u[1]*du_dx) * rhom;
+
+    DataType rhom = 1.0 / u[0];
+    DataType drho_dx = u_grad[0];
+    DataType du_dx = (u_grad[1] - primtv[1] * drho_dx) * rhom;
+    DataType dT_dx =
+        (u_grad[2] - u[2] * u_grad[0] * rhom - u[1] * du_dx) * rhom;
     // DataType dprimtv[NPRIMTV];
     // dprimtv[0] = u_grad[0]; //drho_dx
     // dprimtv[1] = (u_grad[1] - primtv[1]*dprimtv[0])/u[0]; // du_dx
-    // //dprimtv[2] = (GAMMA-1) * (u_grad[2] - 0.5*u_grad[0]*primtv[1]*primtv[1] - u[2]* dprimtv[1]);// dP_dx
-    // dprimtv[3] = (u_grad[2] - u[2]*u_grad[0]/u[0] - u[1]*dprimtv[1])/u[0]; // dT_dx
+    // //dprimtv[2] = (GAMMA-1) * (u_grad[2] - 0.5*u_grad[0]*primtv[1]*primtv[1]
+    // - u[2]* dprimtv[1]);// dP_dx dprimtv[3] = (u_grad[2] -
+    // u[2]*u_grad[0]/u[0] - u[1]*dprimtv[1])/u[0]; // dT_dx
 
-    DataType vis = vis_0 ;//* (primtv[3]/T_R) * std::sqrt(primtv[3]/T_R) *(T_R + S_R)/(primtv[3] + S_R);
+    DataType vis = vis_0; //* (primtv[3]/T_R) * std::sqrt(primtv[3]/T_R) *(T_R +
+                          // S_R)/(primtv[3] + S_R);
 
     flux[0] = 0.0;
-    flux[1] = 4.0/3.0 * vis * du_dx;
-    flux[2] = primtv[1] * flux[1] + vis * GAMMA/Pr * dT_dx; 
+    flux[1] = 4.0 / 3.0 * vis * du_dx;
+    flux[2] = primtv[1] * flux[1] + vis * GAMMA / Pr * dT_dx;
 }
 
-
-void computeBR2Flux(const DataType (&uL) [NCONSRV], 
+void computeBR2Flux(const DataType (&uL)[NCONSRV],
                     const DataType (&uL_grad)[NCONSRV],
-                    const DataType (&uR) [NCONSRV], 
+                    const DataType (&uR)[NCONSRV],
                     const DataType (&uR_grad)[NCONSRV],
                     const DataType local_det_jac_L,
-                    const DataType local_det_jac_R,
-                    DataType (&flux)[NCONSRV], 
-                    DataType (&globalLift_L)[NSP*NCONSRV],
-                    DataType (&globalLift_R)[NSP*NCONSRV],
-                    DataType vis_0 )
+                    const DataType local_det_jac_R, DataType (&flux)[NCONSRV],
+                    DataType (&globalLift_L)[NSP * NCONSRV],
+                    DataType (&globalLift_R)[NSP * NCONSRV],
+                    const Constant<DataType, ORDER> &Constant_s, DataType vis_0)
 {
-    auto Mass_inv = invertMatrix<DataType, ORDER>(getMMatrix<DataType, ORDER>());
+    auto Mass_inv = invertMatrix<DataType, ORDER>(Constant_s.getMMatrix());
     auto MEntropy = getMMatrixEntropy<DataType, ORDER>();
-    auto DMass = getDMatrix<DataType, ORDER>();
+    auto DMass = Constant_s.getDMatrix();
 
     // step1 : compute local lift operator
     DataType localLift_L[NSP][NCONSRV];
@@ -134,7 +136,7 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {   
+        {
             DataType jump = uR[ivar] - uL[ivar];
 
             localLift_L[isp][ivar] = DataType(0.0);
@@ -142,11 +144,13 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
 
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                localLift_L[isp][ivar] +=
-                    Mass_inv[isp][jsp] * MEntropy[isp][ORDER] * jump * (-0.5) / local_det_jac_L;
-                
-                localLift_R[isp][ivar] +=
-                    Mass_inv[isp][jsp] * MEntropy[isp][0] * jump * (-0.5) / local_det_jac_R; 
+                localLift_L[isp][ivar] += Mass_inv[isp][jsp] *
+                                          MEntropy[isp][ORDER] * jump * (-0.5) /
+                                          local_det_jac_L;
+
+                localLift_R[isp][ivar] += Mass_inv[isp][jsp] *
+                                          MEntropy[isp][0] * jump * (-0.5) /
+                                          local_det_jac_R;
             }
         }
     }
@@ -155,18 +159,18 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {   
-            globalLift_L[isp*NCONSRV+ivar] += localLift_L[isp][ivar];
-            globalLift_R[isp*NCONSRV+ivar] += localLift_R[isp][ivar];
+        {
+            globalLift_L[isp * NCONSRV + ivar] += localLift_L[isp][ivar];
+            globalLift_R[isp * NCONSRV + ivar] += localLift_R[isp][ivar];
         }
     }
 
     // step3 : compute invflux
     DataType uL_grad_[NCONSRV];
     DataType uR_grad_[NCONSRV];
-    
+
     for (int ivar = 0; ivar < NCONSRV; ivar++)
-    {   
+    {
         uL_grad_[ivar] = uL_grad[ivar] - localLift_L[ORDER][ivar];
         uR_grad_[ivar] = uR_grad[ivar] - localLift_R[0][ivar];
     }
@@ -174,14 +178,11 @@ void computeBR2Flux(const DataType (&uL) [NCONSRV],
     DataType flux_L[NCONSRV];
     DataType flux_R[NCONSRV];
 
-    computeVisFlux(uL,uL_grad_,flux_L,vis_0);
-    computeVisFlux(uR,uR_grad_,flux_R,vis_0);
+    computeVisFlux(uL, uL_grad_, flux_L, vis_0);
+    computeVisFlux(uR, uR_grad_, flux_R, vis_0);
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
-    { 
+    {
         flux[ivar] = DataType(0.5) * (flux_L[ivar] + flux_R[ivar]);
     }
-
-}                    
-
-
+}
