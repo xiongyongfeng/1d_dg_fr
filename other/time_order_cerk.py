@@ -2,11 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # 定义参数
-lambda_val = -2.01  # λ值
+lambda_val = -1  # λ值
 y0 = 1.0  # 初始条件 y(0)=1
 t0 = 0.0  # 初始时间
-T = 1.0  # 评估时间点
-h_list = [0.025, 0.0125, 0.00625, 0.003125, 0.0015625]  # 步长列表
+T = 2  # 评估时间点
+# h_list = [
+#     0.05,
+#     0.025,
+#     0.0125,
+#     0.00625,
+#     0.003125,
+#     0.0015625,
+#     0.00078125,
+#     0.000390625,
+# ]  # 步长列表
+h_list = [
+    0.4,
+    0.2,
+    0.1,
+    0.05,
+    0.025,
+    0.0125,
+    0.00625,
+    0.003125,
+    0.0015625,
+    0.00078125,
+    0.000390625,
+]  # 步长列表
 
 
 # 定义微分方程 dy/dt = λy
@@ -145,7 +167,8 @@ def cerk4(f, y0, t0, T, h):
             + (b03 + b13 + b23) * k3
             + (b04 + b14 + b24) * k4
         )  # paper
-        # un = un + 1 / 24 * k1 + 23 / 24 * k2  # dimaxer
+        # un = un + 1 / 24 * k1 * h + 23 / 24 * k2 * h  # dimaxer
+        un = un + 1 / 24 * k1 * h + 22 / 24 * k2 * h + 1 / 24 * k3 * h  # dimaxer
         t = t + h
         t_seq.append(t)
         y_seq.append(un)
@@ -409,6 +432,208 @@ def cerk6_dimaxer(f, y0, t0, T, h):
     return un, t_seq, y_seq
 
 
+def cerk8(f, y0, t0, T, h):
+    b01 = 1
+    b02 = 0
+    b03 = 0
+    b04 = 0
+    b05 = 0
+    b06 = 0
+    b07 = 0
+    b08 = 0
+
+    b11 = -3292 / 819
+    b12 = 0
+    b13 = 5112 / 715
+    b14 = -123 / 52
+    b15 = -63 / 52
+    b16 = -40817 / 33462
+    b17 = 18048 / 5915
+    b18 = -18 / 13
+
+    b21 = 17893 / 2457
+    b22 = 0
+    b23 = -43568 / 2145
+    b24 = 3161 / 234
+    b25 = 1061 / 234
+    b26 = 60025 / 50193
+    b27 = -637696 / 53235
+    b28 = 75 / 13
+
+    b31 = -4969 / 819
+    b32 = 0
+    b33 = 1344 / 65
+    b34 = -1465 / 78
+    b35 = -413 / 78
+    b36 = 2401 / 1521
+    b37 = 96256 / 5915
+    b38 = -109 / 13
+
+    b41 = 596 / 315
+    b42 = 0
+    b43 = -1984 / 275
+    b44 = 118 / 15
+    b45 = 2
+    b46 = -9604 / 6435
+    b47 = -48128 / 6825
+    b48 = 4
+
+    a21 = 1 / 6
+    a31 = 1 / 16
+    a32 = 3 / 16
+    a41 = 1 / 4
+    a42 = -3 / 4
+    a43 = 1
+    a51 = -3 / 4
+    a52 = 15 / 4
+    a53 = -3
+    a54 = 1 / 2
+    a61 = 369 / 1372
+    a62 = -243 / 343
+    a63 = 297 / 343
+    a64 = 1485 / 9604
+    a65 = 297 / 4802
+    a71 = -133 / 4512
+    a72 = 1113 / 6016
+    a73 = 7945 / 16544
+    a74 = -12845 / 24064
+    a75 = -315 / 24064
+    a76 = 156065 / 198528
+    a81 = 83 / 945
+    a82 = 0
+    a83 = 248 / 825
+    a84 = 41 / 180
+    a85 = 1 / 36
+    a86 = 2401 / 38610
+    a87 = 6016 / 20475
+
+    t_seq = []
+    y_seq = []
+
+    t = t0
+    un = y0
+    t_seq.append(t)
+    y_seq.append(un)
+    n = int(round((T - t0) / h))  # 计算步数
+    for i in range(n):
+        v1 = un
+        k1 = f(t, v1)
+        v2 = un + a21 * k1 * h
+        k2 = f(t, v2)
+        v3 = un + (a31 * k1 + a32 * k2) * h
+        k3 = f(t, v3)
+        v4 = un + (a41 * k1 + a42 * k2 + a43 * k3) * h
+        k4 = f(t, v4)
+        v5 = un + (a51 * k1 + a52 * k2 + a53 * k3 + a54 * k4) * h
+        k5 = f(t, v5)
+        v6 = un + (a61 * k1 + a62 * k2 + a63 * k3 + a64 * k4 + a65 * k5) * h
+        k6 = f(t, v6)
+        v7 = un + (a71 * k1 + a72 * k2 + a73 * k3 + a74 * k4 + a75 * k5 + a76 * k6) * h
+        k7 = f(t, v7)
+        v8 = (
+            un
+            + (
+                a81 * k1
+                + a82 * k2
+                + a83 * k3
+                + a84 * k4
+                + a85 * k5
+                + a86 * k6
+                + a87 * k7
+            )
+            * h
+        )
+        k8 = f(t, v8)
+        c0 = (
+            b01 * k1
+            + b02 * k2
+            + b03 * k3
+            + b04 * k4
+            + b05 * k5
+            + b06 * k6
+            + b07 * k7
+            + b08 * k8
+        )
+        c1 = (
+            b11 * k1
+            + b12 * k2
+            + b13 * k3
+            + b14 * k4
+            + b15 * k5
+            + b16 * k6
+            + b17 * k7
+            + b18 * k8
+        ) / h
+        c2 = (
+            (
+                b21 * k1
+                + b22 * k2
+                + b23 * k3
+                + b24 * k4
+                + b25 * k5
+                + b26 * k6
+                + b27 * k7
+                + b28 * k8
+            )
+            / h
+            / h
+        )
+        c3 = (
+            (
+                b31 * k1
+                + b32 * k2
+                + b33 * k3
+                + b34 * k4
+                + b35 * k5
+                + b36 * k6
+                + b37 * k7
+                + b38 * k8
+            )
+            / h
+            / h
+            / h
+        )
+        c4 = (
+            (
+                b41 * k1
+                + b42 * k2
+                + b43 * k3
+                + b44 * k4
+                + b45 * k5
+                + b46 * k6
+                + b47 * k7
+                + b48 * k8
+            )
+            / h
+            / h
+            / h
+            / h
+        )
+
+        un = (
+            un
+            + c0 * h
+            + c1 * h * h
+            + c2 * h * h * h
+            + c3 * h * h * h * h
+            + c4 * h * h * h * h * h
+        )
+        # 等价于
+        # un = un + h * (
+        #     (b01 + b11 + b21 + b31) * k1
+        #     + (b02 + b12 + b22 + b32) * k2
+        #     + (b03 + b13 + b23 + b33) * k3
+        #     + (b04 + b14 + b24 + b34) * k4
+        #     + (b05 + b15 + b25 + b35) * k5
+        #     + (b06 + b16 + b26 + b36) * k6
+        # )  # paper
+
+        t = t + h
+        t_seq.append(t)
+        y_seq.append(un)
+    return un, t_seq, y_seq
+
+
 def time_order_analysis(time_scheme):
     errors = []
     u_seq = []
@@ -508,27 +733,7 @@ def cerk4_continuous(f, y0, t0, T, h):
     return t_last_time_step_seq, y_last_time_step_seq
 
 
-def cerk_continous_soln_analysis():
-    h = 0.025
-    t_seq_cerk4, y_seq_cerk4 = cerk4_continuous(lambda_y, y0, t0, T, h)
-
-    t_seq = np.linspace(T - h, T, 101)
-    y_seq_analysis = exact_solution(t_seq)
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(t_seq_cerk4, y_seq_cerk4, label="CERK4")
-    plt.plot(t_seq, y_seq_analysis, label="exact soln")
-    plt.title("continuous soln in one time step")
-    plt.xlabel("t")
-    plt.ylabel("y")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig("continus_soln_one_time_step.png", dpi=300)
-
-
 if __name__ == "__main__":
-
-    # cerk_continous_soln_analysis()
 
     log_h = np.log10(h_list)
 
@@ -544,8 +749,8 @@ if __name__ == "__main__":
         markersize=8,
     )
     ax2.plot(
-        t_seq[4],
-        u_seq[4],
+        t_seq[0],
+        u_seq[0],
         "k-",
         label=f"euler forward error (slope = {coefficients[0]:.4f})",
     )
@@ -611,21 +816,32 @@ if __name__ == "__main__":
     )
     ax2.plot(t_seq[0], u_seq[0], "b-.", label=f"CERK6 (slope = {coefficients[0]:.4f})")
 
-    print("\n CERK6-Dimaxer:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk6_dimaxer)
+    # print("\n CERK6-Dimaxer:")
+    # errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk6_dimaxer)
+    # ax1.plot(
+    #     log_h,
+    #     log_errors,
+    #     "go-.",
+    #     label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
+    #     markersize=8,
+    # )
+    # ax2.plot(
+    #     t_seq[0],
+    #     u_seq[0],
+    #     "g-.",
+    #     label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
+    # )
+
+    print("\n CERK8:")
+    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk8)
     ax1.plot(
         log_h,
         log_errors,
-        "go-.",
-        label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
+        "ob:",
+        label=f"CERK8 (slope = {coefficients[0]:.4f})",
         markersize=8,
     )
-    ax2.plot(
-        t_seq[0],
-        u_seq[0],
-        "g-.",
-        label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
-    )
+    ax2.plot(t_seq[0], u_seq[0], "b:", label=f"CERK8 (slope = {coefficients[0]:.4f})")
 
     ax1.set_xlabel("log(h)")
     ax1.set_ylabel("log(error)")

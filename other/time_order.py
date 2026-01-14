@@ -6,6 +6,7 @@ lambda_val = -3  # λ值
 y0 = 1.0  # 初始条件 y(0)=1
 t0 = 0.0  # 初始时间
 T = 1.0  # 评估时间点
+# h_list = [0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625, 0.003125, 0.0015625]  # 步长列表
 h_list = [0.025, 0.0125, 0.00625, 0.003125, 0.0015625]  # 步长列表
 
 
@@ -16,7 +17,7 @@ def lambda_y(t, y):
 
 # 理论解 y(t) = exp(λt)
 def exact_solution(t):
-    return np.exp(lambda_val * t)
+    return np.exp(lambda_val * np.array(t))
 
 
 # 欧拉向前方法计算在时间T的数值解
@@ -256,17 +257,21 @@ def twosteptwostage(f, y0, t0, T, h):
     omega = 1 / 1.0
     theta = 1.0
 
-    a_20 = 0
-    d_20 = ((2.0 - np.sqrt(2.0)) / (2.0 * omega)) ** 2
-    v2 = 2.0
+    # a_20 = 0
+    # d_20 = ((2.0 - np.sqrt(2.0)) / (2.0 * omega)) ** 2
+    # v2 = 2.0
 
     # a_20 = 0
     # d_20 = (3.0 / 2.0 / omega) ** 2
     # v2 = 0.2
 
-    # a_20 = -1
-    # d_20 = 1
-    # v2 = 0.167
+    # a_20 = -0.4994
+    # d_20 = 0.0101
+    # v2 = 0.4149
+
+    a_20 = -1
+    d_20 = 1
+    v2 = 0.167
 
     a_21 = omega * (np.sqrt(d_20 - 2 * a_20) + d_20 - a_20)
     d_21 = 1.0 - d_20
@@ -431,7 +436,7 @@ def cerk4_continuous(f, y0, t0, T, h):
         c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4) / h
         c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4) / h / h
 
-        if i == n - 1:
+        if i >= n - 2:
             ratio = np.linspace(0, 1, 101)
             for r in ratio:
                 t_last_time_step_seq.append(t + h * r)
@@ -451,7 +456,7 @@ def cerk4_continuous(f, y0, t0, T, h):
         t_seq.append(t)
         y_seq.append(un)
 
-    return t_last_time_step_seq, y_last_time_step_seq
+    return t_last_time_step_seq, y_last_time_step_seq, t_seq, y_seq
 
 
 def twosteptwostage_continuous(y0, t0, T, h):
@@ -497,6 +502,7 @@ def twosteptwostage_continuous(y0, t0, T, h):
 
     t_last_time_step_seq = []
     y_last_time_step_seq = []
+    y_last_time_step_seq_modify = []
     t_seq = []
     y_seq = []
     t_seq.append(t)
@@ -519,8 +525,13 @@ def twosteptwostage_continuous(y0, t0, T, h):
             )
         )
 
-        if i == n - 1:
+        if i >= n - 2:
+            print(f"istep={i}")
+            print(f"u_n = {u_n}")
+            print(f"u_n+1 = {y}")
             ratio = np.linspace(0, 1, 101)
+            r_idx = 0
+            u_r0 = 0
             for r in ratio:
                 b0 = (
                     2 * r**3
@@ -556,26 +567,133 @@ def twosteptwostage_continuous(y0, t0, T, h):
                     )
                 )
                 y_last_time_step_seq.append(u_r)
+
+                if r_idx == 0:
+                    u_r0 = u_r
+
+                # y_last_time_step_seq_modify.append(u_r + (1 - r) * (u_n - u_r0))
+
+                # 四阶
+                c0 = u_n
+                c1 = lambda_y(t, u_n)
+                delta_m = u_n_1 - u_n + lambda_y(t, u_n) * omega
+                gamma = lambda_y(t, u_n_1) - lambda_y(t, u_n)
+                delta_p = y - u_n - lambda_y(t, u_n)
+                c2 = (
+                    (3 + 4 * omega) / (omega * (1 + omega)) ** 2 * delta_m
+                    + gamma / (omega * (1 + omega))
+                    + omega * omega / (1 + omega) ** 2 * delta_p
+                )
+                c3 = (
+                    2
+                    * (1 - 2 * omega * omega)
+                    / (omega**3 * (1 + omega) ** 2)
+                    * delta_m
+                    + (1 - omega) / (omega * omega * (1 + omega)) * gamma
+                    + (2 * omega) / (1 + omega) ** 2 * delta_p
+                )
+                c4 = (
+                    -(2 + 3 * omega) / (omega**3 * (1 + omega) ** 2) * delta_m
+                    - gamma / (omega**2 * (1 + omega))
+                    + delta_p / (1 + omega) ** 2
+                )
+
+                # y_last_time_step_seq_modify.append(
+                #     c0 + c1 * r + c2 * r**2 + c3 * r**3 + c4 * r**4
+                # )  # u(r) = c0+c1*r+c2*r^2+c3*r^3+c4*r^4
+
+                # 三阶
+                c0 = u_n
+                c1 = lambda_y(t, u_n)
+                delta_m = u_n_1 - u_n + lambda_y(t, u_n) * omega
+                delta_p = y - u_n - lambda_y(t, u_n)
+                c2 = (delta_m + omega**3 * delta_p) / (omega**2 * (1 + omega))
+                c3 = (-delta_m + omega**2 * delta_p) / (omega**2 * (1 + omega))
+                # y_last_time_step_seq_modify.append(
+                #     c0 + c1 * r + c2 * r**2 + c3 * r**3
+                # )  # u(r) = c0+c1*r+c2*r^2+c3*r^3+c4*r^4
+
+                # 二阶
+                c0 = u_n
+                c1 = (omega * omega * y + (1 - omega * omega) * u_n - u_n_1) / (
+                    omega * (1 + omega)
+                )
+                c2 = (u_n_1 - (1 + omega) * u_n + omega * y) / (omega * (1 + omega))
+                y_last_time_step_seq_modify.append(
+                    c0 + c1 * r + c2 * r**2
+                )  # u(r) = c0+c1*r+c2*r^2+c3*r^3
+
+                r_idx += 1
+
+            print(f"yn(r=0)={y_last_time_step_seq[0]}")
+            print(f"yn(r=1)={y_last_time_step_seq[100]}")
+            print(f"(yn(r=0)-un)/un={(y_last_time_step_seq[0]-u_n)/u_n}")
         t = t + h
         u_n_1 = u_n
         u_n = y
         t_seq.append(t)
         y_seq.append(y)
-    return t_last_time_step_seq, y_last_time_step_seq
+    return (
+        t_last_time_step_seq,
+        y_last_time_step_seq,
+        y_last_time_step_seq_modify,
+        t_seq,
+        y_seq,
+    )
 
 
 def cerk_continous_soln_analysis():
-    h = 0.025
-    t_seq_cerk4, y_seq_cerk4 = cerk4_continuous(lambda_y, y0, t0, T, h)
-    t_seq_2step2stage, y_seq_2step2stage = twosteptwostage_continuous(y0, t0, T, h)
+    h = 0.25
+    nstep = int(round((T - t0) / h))
+    (
+        t_seq_cerk4_onestep,
+        y_seq_cerk4_onestep,
+        t_seq_cerk4,
+        y_seq_cerk4,
+    ) = cerk4_continuous(lambda_y, y0, t0, T, h)
+    (
+        t_seq_2step2stage_onestep,
+        y_seq_2step2stage_onestep,
+        y_seq_2step2stage_onestep_modify,
+        t_seq_2step2stage,
+        y_seq_2step2stage,
+    ) = twosteptwostage_continuous(y0, t0, T, h)
 
-    t_seq = np.linspace(T - h, T, 101)
-    y_seq_analysis = exact_solution(t_seq)
+    t_seq_analysis = np.linspace(t_seq_cerk4[nstep - 2], t_seq_cerk4[nstep], 201)
+    y_seq_analysis = exact_solution(t_seq_analysis)
 
     plt.figure(figsize=(10, 6))
-    plt.plot(t_seq_cerk4, y_seq_cerk4, label="CERK4")
-    plt.plot(t_seq_2step2stage, y_seq_2step2stage, label="2step2stage")
-    plt.plot(t_seq, y_seq_analysis, label="exact soln")
+    plt.plot(
+        t_seq_cerk4_onestep, y_seq_cerk4_onestep, color="red", label="CERK4_continous"
+    )
+    plt.scatter(
+        t_seq_cerk4[nstep - 2 : nstep + 1],
+        y_seq_cerk4[nstep - 2 : nstep + 1],
+        label="CERK4",
+        color="red",
+        marker="o",
+    )
+    plt.plot(
+        t_seq_2step2stage_onestep,
+        y_seq_2step2stage_onestep,
+        label="2step2stage_continuous",
+        color="blue",
+    )
+    plt.plot(
+        t_seq_2step2stage_onestep,
+        y_seq_2step2stage_onestep_modify,
+        label="2step2stage_continuous_modify",
+        color="blue",
+        linestyle="--",
+    )
+    plt.scatter(
+        t_seq_2step2stage[nstep - 2 : nstep + 1],
+        y_seq_2step2stage[nstep - 2 : nstep + 1],
+        label="2step2stage",
+        color="blue",
+        marker="o",
+    )
+    plt.plot(t_seq_analysis, y_seq_analysis, label="exact soln")
     plt.title("continuous soln in one time step")
     plt.xlabel("t")
     plt.ylabel("y")
