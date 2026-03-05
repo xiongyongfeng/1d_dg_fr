@@ -21,15 +21,25 @@ class PhysicsLAD : public PhysicsModel
         }
     }
 
-    void computeRiemannFlux(const DataType uL[NCONSRV],
-                            const DataType uR[NCONSRV], DataType flux[NCONSRV],
-                            const Config &config) const override
+    void computeFluxNormal(const DataType u[NCONSRV], DataType flux[NCONSRV],
+                           const Config &config, DataType normal) const override
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            DataType F_L = config.a * uL[ivar];
-            DataType F_R = config.a * uR[ivar];
-            DataType alpha = std::abs(config.a);
+            flux[ivar] = config.a * u[ivar] * normal;
+        }
+    }
+
+    void computeRiemannFlux(const DataType uL[NCONSRV],
+                            const DataType uR[NCONSRV], DataType flux[NCONSRV],
+                            const Config &config,
+                            DataType normal) const override
+    {
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            DataType F_L = config.a * uL[ivar] * normal;
+            DataType F_R = config.a * uR[ivar] * normal;
+            DataType alpha = std::abs(config.a * normal);
             // Lax-Friedrichs 通量
             flux[ivar] =
                 DataType(0.5) * (F_L + F_R - alpha * (uR[ivar] - uL[ivar]));
@@ -58,7 +68,7 @@ class PhysicsLAD : public PhysicsModel
             {
                 // u[isp][ivar] = std::sin(2 * acos(-1.0) * x[isp]);
 
-                u[isp][ivar]    = config.bc_right;
+                u[isp][ivar] = config.bc_right;
 
                 // if (x[isp] < DataType(0.25))
                 // {
@@ -96,18 +106,18 @@ class PhysicsLAD : public PhysicsModel
                                const DataType uR[NCONSRV],
                                const DataType uR_grad[NCONSRV],
                                const DataType &length_scale,
-                               DataType flux[NCONSRV],
-                               const Config &config) const override
+                               DataType flux[NCONSRV], const Config &config,
+                               DataType normal) const override
     {
         // 中心通量: F* = 0.5 * (F_L + F_R)
         // 其中 F_L = nu * uL_grad, F_R = nu * uR_grad
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            DataType flux_L = config.nu * uL_grad[ivar];
-            DataType flux_R = config.nu * uR_grad[ivar];
+            DataType flux_L = config.nu * uL_grad[ivar] * normal;
+            DataType flux_R = config.nu * uR_grad[ivar] * normal;
             flux[ivar] = DataType(0.5) * (flux_L + flux_R) -
                          config.ip_coef * (2.0 * ORDER + 1.0) * config.nu *
-                             (uR[ivar] - uL[ivar]) / length_scale;
+                             (uL[ivar] - uR[ivar]) / length_scale;
         }
     }
 

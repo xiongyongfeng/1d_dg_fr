@@ -7,7 +7,7 @@ using DataType = double; // 双精度类型
 #else
 using DataType = float; // 单精度类型
 #endif
-constexpr size_t ORDER = 1;
+constexpr size_t ORDER = 2;
 constexpr size_t NSP = ORDER + 1;
 
 constexpr size_t TORDER = 1;

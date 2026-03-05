@@ -120,14 +120,14 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     {
         // Dirichlet边界: 使用边界值
         getBoundaryState(-1, uL_bc, uL_grad_bc);
-        physics->computeRiemannFlux(uL_bc, element.u_consrv[0],
-                                    rhs_common_flux_left, config);
+        physics->computeRiemannFlux(element.u_consrv[0], uL_bc,
+                                    rhs_common_flux_left, config, -1.0);
     }
     else
     {
-        physics->computeRiemannFlux(element_l.u_consrv[ORDER],
-                                    element.u_consrv[0], rhs_common_flux_left,
-                                    config);
+        physics->computeRiemannFlux(element.u_consrv[0],
+                                    element_l.u_consrv[ORDER],
+                                    rhs_common_flux_left, config, -1);
     }
 
     // 界面通量 - 右边界
@@ -140,18 +140,18 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         // Dirichlet边界: 使用边界值
         getBoundaryState(1, uR_bc, uR_grad_bc);
         physics->computeRiemannFlux(element.u_consrv[ORDER], uR_bc,
-                                    rhs_common_flux_right, config);
+                                    rhs_common_flux_right, config, 1.0);
     }
     else
     {
         physics->computeRiemannFlux(element.u_consrv[ORDER],
                                     element_r.u_consrv[0],
-                                    rhs_common_flux_right, config);
+                                    rhs_common_flux_right, config, 1.0);
     }
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
-        rhs_tmp[0][ivar] += rhs_common_flux_left[ivar];
+        rhs_tmp[0][ivar] -= rhs_common_flux_left[ivar];
         rhs_tmp[ORDER][ivar] -= rhs_common_flux_right[ivar];
     }
 
@@ -255,9 +255,9 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         {
             // Dirichlet边界
             physics->computeVisRiemannFlux(
-                uL_bc, uL_grad_bc, element.u_consrv[0],
-                element.u_grad_consrv[0], length_scale,
-                rhs_vis_common_flux_left, config);
+                element.u_consrv[0], element.u_grad_consrv[0], uL_bc,
+                uL_grad_bc, length_scale, rhs_vis_common_flux_left, config,
+                -1.0);
             for (size_t i = 0; i < NCONSRV; i++)
             {
                 left_bc_u_out[i] = uL_bc[i];
@@ -266,9 +266,10 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         else
         {
             physics->computeVisRiemannFlux(
+
+                element.u_consrv[0], element.u_grad_consrv[0],
                 element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
-                element.u_consrv[0], element.u_grad_consrv[0], length_scale,
-                rhs_vis_common_flux_left, config);
+                length_scale, rhs_vis_common_flux_left, config, -1.0);
         }
 
         // 粘性界面通量 - 右边界
@@ -279,7 +280,8 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             // Dirichlet边界
             physics->computeVisRiemannFlux(
                 element.u_consrv[ORDER], element.u_grad_consrv[ORDER], uR_bc,
-                uR_grad_bc, length_scale, rhs_vis_common_flux_right, config);
+                uR_grad_bc, length_scale, rhs_vis_common_flux_right, config,
+                1.0);
             for (size_t i = 0; i < NCONSRV; i++)
             {
                 right_bc_u_out[i] = uR_bc[i];
@@ -290,39 +292,38 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
             physics->computeVisRiemannFlux(
                 element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
                 element_r.u_consrv[0], element_r.u_grad_consrv[0], length_scale,
-                rhs_vis_common_flux_right, config);
+                rhs_vis_common_flux_right, config, 1.0);
         }
 
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
             rhs_tmp[0][ivar] += rhs_vis_common_flux_left[ivar];
-            rhs_tmp[ORDER][ivar] -= rhs_vis_common_flux_right[ivar];
+            rhs_tmp[ORDER][ivar] += rhs_vis_common_flux_right[ivar];
         }
 
         DataType rhs_nipg_left[NSP][NCONSRV];
         DataType rhs_nipg_right[NSP][NCONSRV];
-        DataType beta = DataType(1.0);
+        DataType beta = DataType(-1.0);
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
                 rhs_nipg_right[isp][ivar] =
-                    -DataType(0.5) * beta * config.nu *
-                    (right_bc_u_out[ivar] - right_bc_u_in[ivar]) *
+                    DataType(0.5) * beta * config.nu *
+                    (right_bc_u_in[ivar] - right_bc_u_out[ivar]) *
                     getDMatrix<DataType, ORDER>()[ORDER][isp] / local_det_jac;
                 rhs_nipg_left[isp][ivar] =
                     -DataType(0.5) * beta * config.nu *
-                    (left_bc_u_out[ivar] - left_bc_u_in[ivar]) *
-                    getDMatrix<DataType, ORDER>()[0][isp] / local_det_jac *
-                    DataType(-1.0);
+                    (left_bc_u_in[ivar] - left_bc_u_out[ivar]) *
+                    getDMatrix<DataType, ORDER>()[0][isp] / local_det_jac;
             }
         }
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                rhs_tmp[isp][ivar] +=
-                    rhs_nipg_left[isp][ivar] + rhs_nipg_right[isp][ivar];
+                rhs_tmp[isp][ivar] += rhs_nipg_left[isp][ivar];
+                rhs_tmp[isp][ivar] += rhs_nipg_right[isp][ivar];
             }
         }
     }
@@ -344,6 +345,9 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
                         getMMatrix<DataType, ORDER>())[isp][jsp] *
                     rhs_tmp[jsp][ivar] / local_det_jac;
             }
+            // if (iele < 3)
+            //     printf("iele=%d,isp=%d,ivar=%d,rhs=%f\n", iele, isp, ivar,
+            //            rhs_pool[iele].rhs[isp][ivar]);
         }
     }
 }
@@ -403,14 +407,14 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
         DataType uL_bc[NCONSRV];
         DataType uL_grad_bc[NCONSRV];
         getBoundaryState(-1, uL_bc, uL_grad_bc);
-        physics->computeRiemannFlux(uL_bc, element.u_consrv[0],
-                                    common_flux_left, config);
+        physics->computeRiemannFlux(element.u_consrv[0], uL_bc,
+                                    common_flux_left, config, -1);
     }
     else
     {
-        physics->computeRiemannFlux(element_l.u_consrv[ORDER],
-                                    element.u_consrv[0], common_flux_left,
-                                    config);
+        physics->computeRiemannFlux(element.u_consrv[0],
+                                    element_l.u_consrv[ORDER], common_flux_left,
+                                    config, -1.0);
     }
 
     DataType common_flux_right[NCONSRV];
@@ -421,13 +425,13 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
         DataType uR_grad_bc[NCONSRV];
         getBoundaryState(1, uR_bc, uR_grad_bc);
         physics->computeRiemannFlux(element.u_consrv[ORDER], uR_bc,
-                                    common_flux_right, config);
+                                    common_flux_right, config, 1.0);
     }
     else
     {
         physics->computeRiemannFlux(element.u_consrv[ORDER],
                                     element_r.u_consrv[0], common_flux_right,
-                                    config);
+                                    config, 1.0);
     }
 
     // 修正项
@@ -436,10 +440,10 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
-        flux_tmp2[0][ivar] =
-            -1.0 * (common_flux_left[ivar] - flux_tmp[0][ivar]);
-        flux_tmp2[ORDER][ivar] =
-            1.0 * (common_flux_right[ivar] - flux_tmp[ORDER][ivar]);
+        flux_tmp2[0][ivar] = 1.0 * (common_flux_left[ivar] -
+                                    flux_tmp[0][ivar] * (DataType(-1.0)));
+        flux_tmp2[ORDER][ivar] = 1.0 * (common_flux_right[ivar] -
+                                        flux_tmp[ORDER][ivar] * DataType(1.0));
     }
 
     for (int isp = 0; isp < NSP; isp++)
@@ -968,6 +972,7 @@ void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
             {
                 u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
                              elem_right.u_consrv[0][ivar];
+                // u_bc[ivar] = u_b_input[ivar];
                 u_grad_bc[ivar] = elem_right.u_grad_consrv[0][ivar];
             }
         }
@@ -979,6 +984,7 @@ void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
             {
                 u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
                              elem_left.u_consrv[ORDER][ivar];
+                // u_bc[ivar] = u_b_input[ivar];
                 u_grad_bc[ivar] = elem_left.u_grad_consrv[ORDER][ivar];
             }
         }
