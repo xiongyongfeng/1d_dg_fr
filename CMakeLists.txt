@@ -1,19 +1,36 @@
 cmake_minimum_required(VERSION 3.15)
-set(CMAKE_CXX_STANDARD 20) # 设置全局 C++ 标准为 17
-set(CMAKE_CXX_STANDARD_REQUIRED ON) # 强制要求编译器支持 C++17，否则报错
-set(CMAKE_CXX_EXTENSIONS OFF) # 禁用编译器特有扩展（如 GNU 的 -std=gnu++17
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(1d_dg_fr)
 
+# 精度选项: DOUBLEPRECISION=ON 使用双精度, OFF 使用单精度
+option(DOUBLE_PRECISION "Use double precision (ON) or single precision (OFF)" ON)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+endif()
+
+# 设置精度宏
+if(DOUBLE_PRECISION)
+    set(PRECISION_DEF USE_DOUBLE_PRECISION=1)
+    message(STATUS "Using DOUBLE precision")
+else()
+    set(PRECISION_DEF USE_DOUBLE_PRECISION=0)
+    message(STATUS "Using SINGLE precision")
 endif()
 
 set(TARGET_NAME main_ns)
 set(TARGET_LAD main_lad)
 set(TARGET_BURGERS main_burgers)
 
+# 生成不同精度的可执行文件名称后缀
+if(DOUBLE_PRECISION)
+    set(PRECISION_SUFFIX "")
+else()
+    set(PRECISION_SUFFIX "_float")
+endif()
 
 file(GLOB_RECURSE SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
@@ -27,15 +44,14 @@ file(GLOB_RECURSE EXCLUDE_FILES
 list(REMOVE_ITEM SOURCE_FILES ${EXCLUDE_FILES})
 message(STATUS "SOURCE_FILES=${SOURCE_FILES}")
 
-add_executable(${TARGET_NAME} ${SOURCE_FILES})
-target_include_directories(${TARGET_NAME}
+add_executable(${TARGET_NAME}${PRECISION_SUFFIX} ${SOURCE_FILES})
+target_include_directories(${TARGET_NAME}${PRECISION_SUFFIX}
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/header
 )
-target_compile_definitions(${TARGET_NAME} PRIVATE NS=1)
+target_compile_definitions(${TARGET_NAME}${PRECISION_SUFFIX} PRIVATE NS=1 ${PRECISION_DEF})
 
 include_directories(/opt/homebrew/include)
-
 
 file(GLOB_RECURSE SOURCE_FILES_LAD
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
@@ -48,12 +64,12 @@ file(GLOB_RECURSE EXCLUDE_FILES
 )
 list(REMOVE_ITEM SOURCE_FILES_LAD ${EXCLUDE_FILES})
 message(STATUS "SOURCE_FILES_LAD=${SOURCE_FILES_LAD}")
-add_executable(${TARGET_LAD} ${SOURCE_FILES_LAD})
-target_include_directories(${TARGET_LAD}
+add_executable(${TARGET_LAD}${PRECISION_SUFFIX} ${SOURCE_FILES_LAD})
+target_include_directories(${TARGET_LAD}${PRECISION_SUFFIX}
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/header
 )
-target_compile_definitions(${TARGET_LAD} PRIVATE LAD=1)
+target_compile_definitions(${TARGET_LAD}${PRECISION_SUFFIX} PRIVATE LAD=1 ${PRECISION_DEF})
 
 file(GLOB_RECURSE SOURCE_FILES_BURGERS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
@@ -66,9 +82,9 @@ file(GLOB_RECURSE EXCLUDE_FILES
 )
 list(REMOVE_ITEM SOURCE_FILES_BURGERS ${EXCLUDE_FILES})
 message(STATUS "SOURCE_FILES_BURGERS=${SOURCE_FILES_BURGERS}")
-add_executable(${TARGET_BURGERS} ${SOURCE_FILES_BURGERS})
-target_include_directories(${TARGET_BURGERS}
+add_executable(${TARGET_BURGERS}${PRECISION_SUFFIX} ${SOURCE_FILES_BURGERS})
+target_include_directories(${TARGET_BURGERS}${PRECISION_SUFFIX}
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/header
 )
-target_compile_definitions(${TARGET_BURGERS} PRIVATE BURGERS=1)
+target_compile_definitions(${TARGET_BURGERS}${PRECISION_SUFFIX} PRIVATE BURGERS=1 ${PRECISION_DEF})

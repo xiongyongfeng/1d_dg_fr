@@ -38,6 +38,20 @@ void ensurePathExists(const fs::path &output_dir)
         // 可在此处终止程序或抛出异常
     }
 }
+
+// 输出守恒变量的积分值
+void printConservationIntegral(const char* label, DataType integral[NCONSRV])
+{
+    std::cout << label << " Conservation Integral: [";
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    {
+        std::cout << integral[ivar];
+        if (ivar < NCONSRV - 1)
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+}
+
 int main(int argc, char **argv)
 {
     std::cout << "running command: ";
@@ -59,10 +73,19 @@ int main(int argc, char **argv)
     Solver solver(config, config.n_ele);
 
     solver.Initialization();
+
+    // 根据CFL数计算时间步长
+    solver.computeCflDt();
+
+    // 输出初始积分值
+    DataType integral_init[NCONSRV];
+    solver.computeConservationIntegral(integral_init);
+    
+
     DataType current_time = 0;
 
-    if (static_cast<int>(std::round(current_time / config.dt)) %
-            static_cast<int>(std::round(config.output_time_step / config.dt)) ==
+    if (static_cast<int>(std::round(current_time / solver.getConfig().dt)) %
+            static_cast<int>(std::round(config.output_time_step / solver.getConfig().dt)) ==
         0)
     {
         std::string filename =
@@ -81,18 +104,18 @@ int main(int argc, char **argv)
 
         if (config.time_scheme_type == 0)
         {
-            // solver.timeRK3();
-            solver.timeRK1();
+            solver.timeRK3();
+            // solver.timeRK1();
         }
         if (config.time_scheme_type == 1)
         {
             solver.timeNewExplicitSchemeK1();
         }
-        current_time += config.dt;
+        current_time += solver.getConfig().dt;
 
-        if (static_cast<int>(std::round(current_time / config.dt)) %
+        if (static_cast<int>(std::round(current_time / solver.getConfig().dt)) %
                 static_cast<int>(
-                    std::round(config.output_time_step / config.dt)) ==
+                    std::round(config.output_time_step / solver.getConfig().dt)) ==
             0)
         {
             std::string filename = config.output_dir + "/result_before" +
@@ -112,9 +135,9 @@ int main(int argc, char **argv)
             solver.TvdLimiter();
         }
 
-        if (static_cast<int>(std::round(current_time / config.dt)) %
+        if (static_cast<int>(std::round(current_time / solver.getConfig().dt)) %
                 static_cast<int>(
-                    std::round(config.output_time_step / config.dt)) ==
+                    std::round(config.output_time_step / solver.getConfig().dt)) ==
             0)
         {
             std::string filename = config.output_dir + "/result_after" +
@@ -128,6 +151,22 @@ int main(int argc, char **argv)
             solver.OutputAvg(filename_avg);
         }
     }
+
+    // 输出最终积分值
+    DataType integral_final[NCONSRV];
+    solver.computeConservationIntegral(integral_final);
+    printConservationIntegral("Initial", integral_init);
+    printConservationIntegral("Final", integral_final);
+
+    // 输出守恒误差
+    std::cout << "Conservation Error: [";
+    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    {
+        std::cout << integral_final[ivar] - integral_init[ivar];
+        if (ivar < NCONSRV - 1)
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
 
     ///////////////////////////////
     // const auto &m = getMMatrix<DataType, ORDER>();

@@ -1,10 +1,15 @@
 import os
 import csv
+import argparse
 import matplotlib.pyplot as plt
 from datetime import datetime  # 用于添加时间戳（可选）
 
-# 设置输入和输出目录
-input_dir = "./soln_0_1_false_1_w1_dt0.006"  # 替换为你的CSV文件夹路径
+# 命令行参数解析
+parser = argparse.ArgumentParser(description='处理CSV文件并生成图像')
+parser.add_argument('input_dir', type=str, help='CSV文件夹路径')
+args = parser.parse_args()
+
+input_dir = args.input_dir
 output_dir = input_dir + "_png"
 
 # 确保输出目录存在
@@ -14,7 +19,7 @@ if not os.path.exists(output_dir):
 # 获取当前时间戳（可选，用于文件名）
 timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-# 遍历目录中的所有CSV文件[1,4](@ref)
+# 遍历目录中的所有CSV文件
 for filename in os.listdir(input_dir):
     if filename.endswith(".csv"):
         # 构造完整文件路径
@@ -61,11 +66,11 @@ for filename in os.listdir(input_dir):
         output_filename = os.path.splitext(filename)[0] + ".png"
         output_path = os.path.join(output_dir, output_filename)
 
-        # 保存高清图像（300 DPI）[7,8](@ref)
+        # 保存高清图像（300 DPI）
         plt.tight_layout()
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
 
-        # 关闭图形释放内存[8](@ref)
+        # 关闭图形释放内存
         plt.close()
 
 print(f"处理完成！所有图表已保存至: {output_dir}")

@@ -8,24 +8,46 @@
 #include <fstream>
 #include <iostream>
 #include <valarray>
-#if defined(NS)
-#include "ns.h"
-#endif
 
-#if defined(LAD)
-#include "lad.h"
-#endif
+Solver::Solver(const Config &config, int nelem) : config(config)
+{
+    this->physics = createPhysicsModel();
 
-#if defined(BURGERS)
-#include "burgers.h"
-#endif
+    this->elem_pool_old = new Element *[NTP];
+    this->elem_pool_tmp = new Element *[NTP];
+    this->rhs_pool_tmp = new Rhs *[NTP];
+    this->geom_pool = new Geom[nelem];
+
+    Element *elem_old_block = new Element[nelem * NTP];
+    Element *elem_tmp_block = new Element[nelem * NTP];
+    Rhs *rhs_tmp_block = new Rhs[nelem * NTP];
+
+    for (int itp = 0; itp < NTP; ++itp)
+    {
+        elem_pool_old[itp] = &elem_old_block[itp * nelem];
+        elem_pool_tmp[itp] = &elem_tmp_block[itp * nelem];
+        rhs_pool_tmp[itp] = &rhs_tmp_block[itp * nelem];
+    }
+}
+
+Solver::~Solver()
+{
+    delete[] elem_pool_old[0];
+    delete[] elem_pool_tmp[0];
+    delete[] rhs_pool_tmp[0];
+
+    delete[] elem_pool_old;
+    delete[] elem_pool_tmp;
+    delete[] rhs_pool_tmp;
+    delete[] geom_pool;
+}
 
 void Solver::Initialization()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         Geom &geom = geom_pool[iele];
-        for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
+        for (int isp = 0; isp < NSP; isp++)
         {
             DataType dx = (config.x1 - config.x0) / config.n_ele;
             geom.x[isp] = config.x0 + iele * dx + isp * dx / (NSP - 1);
@@ -36,119 +58,44 @@ void Solver::Initialization()
 
     for (int itp = 0; itp < NTP; itp++)
     {
-
         for (int iele = 0; iele < config.n_ele; iele++)
         {
             Element &elem = elem_pool_old[itp][iele];
-#ifdef LAD
-            for (int isp = 0; isp < NSP; isp++)
-            {
-                for (int ivar = 0; ivar < NCONSRV; ivar++)
-                {
-                    // if (geom_pool[iele].x[isp] < DataType(0.25))
-                    // {
-                    //     elem.u_consrv[isp][ivar] = DataType(10.0);
-                    // }
-                    // else if (geom_pool[iele].x[isp] > DataType(0.75))
-                    // {
-                    //     elem.u_consrv[isp][ivar] = DataType(10.0);
-                    // }
-                    // else
-                    // {
-                    //     elem.u_consrv[isp][ivar] = DataType(11.0);
-                    // }
-                    elem.u_consrv[isp][ivar] = std::sin(2*acos(-1.0)*geom_pool[iele].x[isp]);
-                }
-            }
-#endif
 
-#ifdef BURGERS
-            for (int isp = 0; isp < NSP; isp++)
-            {
-                for (int ivar = 0; ivar < NCONSRV; ivar++)
-                {
-                    DataType x = geom_pool[iele].x[isp];
-                    elem.u_consrv[isp][ivar] = 0.5 + std::sin(x);
-                }
-            }
-#endif
-
-#ifdef NS
-            DataType elem_consrv_left[NCONSRV];
-            DataType elem_consrv_right[NCONSRV];
-            DataType elem_primtv_left[NPRIMTV];
-            DataType elem_primtv_right[NPRIMTV];
-            elem_primtv_left[0] = 1.0;
-            elem_primtv_left[1] = 0.0;
-            elem_primtv_left[2] = 1.0;
-            elem_primtv_left[3] = 1.0;
-            elem_primtv_right[0] = 0.125;
-            elem_primtv_right[1] = 0.0;
-            elem_primtv_right[2] = 0.1;
-            elem_primtv_right[3] = 0.1 / 0.125;
-            Primtv2Consrv(elem_primtv_left, elem_consrv_left);
-            Primtv2Consrv(elem_primtv_right, elem_consrv_right);
-            // for (int ivar = 0; ivar < NCONSRV; ivar++)
-            //     printf("consrv_l[ivar] = %f, consr_r[ivar]=%f\n",
-            //            elem_consrv_left[ivar], elem_consrv_right[ivar]);
-            for (int isp = 0; isp < NSP; isp++) /*for sod initialization*/
-            {
-                if (geom_pool[iele].x[isp] < DataType(0.0))
-                {
-                    elem.u_consrv[isp][0] = elem_consrv_left[0];
-                    elem.u_consrv[isp][1] = elem_consrv_left[1];
-                    elem.u_consrv[isp][2] = elem_consrv_left[2];
-                }
-                else
-                {
-                    elem.u_consrv[isp][0] = elem_consrv_right[0];
-                    elem.u_consrv[isp][1] = elem_consrv_right[1];
-                    elem.u_consrv[isp][2] = elem_consrv_right[2];
-                }
-            }
-#endif
+            // 使用物理模型的初始条件
+            physics->setInitialCondition(elem.u_consrv, geom_pool[iele].x,
+                                         config);
 
             computeElementGrad(iele);
             ComputeElementAvg(iele);
         }
     }
-};
+}
+
 void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
+    DataType length_scale = geom_pool[iele].dx; // 计算特征长度尺度
     DataType local_det_jac = geom_pool[iele].local_det_jac;
     const Element &element_l =
         elem_pool[(iele - 1 + config.n_ele) % config.n_ele];
-    DataType local_det_jac_L = geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_L =
+        geom_pool[(iele - 1 + config.n_ele) % config.n_ele].local_det_jac;
     const Element &element_r =
         elem_pool[(iele + 1 + config.n_ele) % config.n_ele];
-    DataType local_det_jac_R = geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
+    DataType local_det_jac_R =
+        geom_pool[(iele + 1 + config.n_ele) % config.n_ele].local_det_jac;
 
     DataType rhs_tmp[NSP][NCONSRV]{};
-
     DataType flux_tmp[NSP][NCONSRV]{};
-    
+
+    // 计算单元内部通量
     for (int isp = 0; isp < NSP; isp++)
     {
-        computeFlux(element.u_consrv[isp], flux_tmp[isp], config.a);
+        physics->computeFlux(element.u_consrv[isp], flux_tmp[isp], config);
     }
-#if 0
-    if (iele == 99)
-    {
 
-        for (int isp = 0; isp < NSP; isp++)
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                printf("DG: ielem =%d, u_consrv[%d][%d]=%f\n", iele, isp,
-                ivar,
-                       element.u_consrv[isp][ivar]);
-                printf("DG: ielem =%d, flux_tmp[%d][%d]=%f\n", iele, isp,
-                ivar,
-                       flux_tmp[isp][ivar]);
-            }
-    }
-#endif
-
+    // 体通量项
     DataType rhs_prediction[NSP][NCONSRV]{};
     for (int isp = 0; isp < NSP; isp++)
     {
@@ -164,30 +111,43 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         }
     }
 
-    // at  j - 1/2
+    // 界面通量 - 左边界
     DataType rhs_common_flux_left[NCONSRV];
-    computeRiemannFlux(element_l.u_consrv[ORDER], element.u_consrv[0],
-                       rhs_common_flux_left, config.a);
+    DataType uL_bc[NCONSRV];
+    DataType uL_grad_bc[NCONSRV];
 
-#ifdef NS
-    if (iele == 0)
+    if (iele == 0 && config.bc_type != 0)
     {
-        computeRiemannFlux(element.u_consrv[0], element.u_consrv[0],
-                           rhs_common_flux_left, config.a);
+        // Dirichlet边界: 使用边界值
+        getBoundaryState(-1, uL_bc, uL_grad_bc);
+        physics->computeRiemannFlux(uL_bc, element.u_consrv[0],
+                                    rhs_common_flux_left, config);
     }
-#endif
-    // at j+1/2
+    else
+    {
+        physics->computeRiemannFlux(element_l.u_consrv[ORDER],
+                                    element.u_consrv[0], rhs_common_flux_left,
+                                    config);
+    }
+
+    // 界面通量 - 右边界
     DataType rhs_common_flux_right[NCONSRV];
-    computeRiemannFlux(element.u_consrv[ORDER], element_r.u_consrv[0],
-                       rhs_common_flux_right, config.a);
+    DataType uR_bc[NCONSRV];
+    DataType uR_grad_bc[NCONSRV];
 
-#ifdef NS
-    if (iele == config.n_ele - 1)
+    if (iele == config.n_ele - 1 && config.bc_type != 0)
     {
-        computeRiemannFlux(element.u_consrv[ORDER], element.u_consrv[ORDER],
-                           rhs_common_flux_right, config.a);
+        // Dirichlet边界: 使用边界值
+        getBoundaryState(1, uR_bc, uR_grad_bc);
+        physics->computeRiemannFlux(element.u_consrv[ORDER], uR_bc,
+                                    rhs_common_flux_right, config);
     }
-#endif
+    else
+    {
+        physics->computeRiemannFlux(element.u_consrv[ORDER],
+                                    element_r.u_consrv[0],
+                                    rhs_common_flux_right, config);
+    }
 
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
@@ -195,82 +155,183 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
         rhs_tmp[ORDER][ivar] -= rhs_common_flux_right[ivar];
     }
 
-
-
-#ifdef LAD
-    // add diffusion term 
-    DataType visflux_tmp[NSP][NCONSRV]{};
-    DataType rhs_common_visflux_left[NCONSRV];
-    DataType rhs_common_visflux_right[NCONSRV];
-    DataType globalLift[NSP*NCONSRV]={0.0}; 
-    DataType globalLift_L[NSP*NCONSRV]; 
-    DataType globalLift_R[NSP*NCONSRV]; 
-
-
-    computeBR2Flux(element_l.u_consrv[ORDER],
-        element_l.u_grad_consrv[ORDER],
-        element.u_consrv[0],
-        element.u_grad_consrv[0],
-        local_det_jac_L,
-        local_det_jac,
-        rhs_common_visflux_left,
-        globalLift_L,
-        globalLift,
-        config.nu);
-    computeBR2Flux(element.u_consrv[ORDER],
-        element.u_grad_consrv[ORDER],
-        element_r.u_consrv[0],
-        element_r.u_grad_consrv[0],
-        local_det_jac,
-        local_det_jac_R,
-        rhs_common_visflux_right,
-        globalLift,
-        globalLift_R,
-        config.nu);
-
-    for (int ivar = 0; ivar < NCONSRV; ivar++)
+    // 扩散项 (如果有)
+    if (physics->hasDiffusion() && config.vis_scheme_type == 0)
     {
-        rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
-        rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
-    }
+        DataType visflux_tmp[NSP][NCONSRV]{};
+        DataType rhs_common_visflux_left[NCONSRV];
+        DataType rhs_common_visflux_right[NCONSRV];
+        DataType globalLift[NSP * NCONSRV] = {0.0};
+        DataType globalLift_L[NSP * NCONSRV];
+        DataType globalLift_R[NSP * NCONSRV];
 
-    // add global lift's contribution on grad
-    DataType grad_u_consrv_[NSP][NCONSRV];
-    for (int isp = 0; isp < NSP; isp++)
-    {
+        physics->computeBR2Flux(
+            element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+            element.u_consrv[0], element.u_grad_consrv[0], local_det_jac_L,
+            local_det_jac, rhs_common_visflux_left, globalLift_L, globalLift,
+            config);
+        physics->computeBR2Flux(
+            element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+            element_r.u_consrv[0], element_r.u_grad_consrv[0], local_det_jac,
+            local_det_jac_R, rhs_common_visflux_right, globalLift, globalLift_R,
+            config);
+
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar]-globalLift[isp*NCONSRV+ivar];
+            rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
+            rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
         }
-    }
-    
-    
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        computeVisFlux(element.u_consrv[isp], 
-            grad_u_consrv_[isp],
-            visflux_tmp[isp], 
-            config.nu);
-    }
 
-    
-
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        // 计算修正后的梯度
+        DataType grad_u_consrv_[NSP][NCONSRV];
+        for (int isp = 0; isp < NSP; isp++)
         {
-            for (int jsp = 0; jsp < NSP; jsp++)
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                rhs_tmp[isp][ivar] -=
-                    getSMatrix<DataType, ORDER>()[jsp][isp] *
-                    visflux_tmp[jsp][ivar];
+                grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar] -
+                                            globalLift[isp * NCONSRV + ivar];
+            }
+        }
+
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            physics->computeVisFlux(element.u_consrv[isp], grad_u_consrv_[isp],
+                                    visflux_tmp[isp], config);
+        }
+
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int jsp = 0; jsp < NSP; jsp++)
+                {
+                    rhs_tmp[isp][ivar] -=
+                        getSMatrix<DataType, ORDER>()[jsp][isp] *
+                        visflux_tmp[jsp][ivar];
+                }
             }
         }
     }
-    #endif
+    else if (physics->hasDiffusion() && config.vis_scheme_type == 1)
+    {
+        // 处理其他粘性方案
+        DataType visflux_tmp[NSP][NCONSRV]{};
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            physics->computeVisFlux(element.u_consrv[isp],
+                                    element.u_grad_consrv[isp],
+                                    visflux_tmp[isp], config);
+        }
 
-    
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                for (int jsp = 0; jsp < NSP; jsp++)
+                {
+                    rhs_tmp[isp][ivar] -=
+                        getSMatrix<DataType, ORDER>()[jsp][isp] *
+                        visflux_tmp[jsp][ivar];
+                }
+            }
+        }
 
+        DataType left_bc_u_out[NCONSRV];
+        DataType left_bc_u_in[NCONSRV];
+        DataType right_bc_u_out[NCONSRV];
+        DataType right_bc_u_in[NCONSRV];
+        for (size_t i = 0; i < NCONSRV; i++)
+        {
+            right_bc_u_out[i] = element_r.u_consrv[0][i];
+            right_bc_u_in[i] = element.u_consrv[ORDER][i];
+            left_bc_u_out[i] = element_l.u_consrv[ORDER][i];
+            left_bc_u_in[i] = element.u_consrv[0][i];
+        }
+
+        // 粘性界面通量 - 左边界
+        DataType rhs_vis_common_flux_left[NCONSRV];
+
+        if (iele == 0 && config.bc_type != 0)
+        {
+            // Dirichlet边界
+            physics->computeVisRiemannFlux(
+                uL_bc, uL_grad_bc, element.u_consrv[0],
+                element.u_grad_consrv[0], length_scale,
+                rhs_vis_common_flux_left, config);
+            for (size_t i = 0; i < NCONSRV; i++)
+            {
+                left_bc_u_out[i] = uL_bc[i];
+            }
+        }
+        else
+        {
+            physics->computeVisRiemannFlux(
+                element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+                element.u_consrv[0], element.u_grad_consrv[0], length_scale,
+                rhs_vis_common_flux_left, config);
+        }
+
+        // 粘性界面通量 - 右边界
+        DataType rhs_vis_common_flux_right[NCONSRV];
+
+        if (iele == config.n_ele - 1 && config.bc_type != 0)
+        {
+            // Dirichlet边界
+            physics->computeVisRiemannFlux(
+                element.u_consrv[ORDER], element.u_grad_consrv[ORDER], uR_bc,
+                uR_grad_bc, length_scale, rhs_vis_common_flux_right, config);
+            for (size_t i = 0; i < NCONSRV; i++)
+            {
+                right_bc_u_out[i] = uR_bc[i];
+            }
+        }
+        else
+        {
+            physics->computeVisRiemannFlux(
+                element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                element_r.u_consrv[0], element_r.u_grad_consrv[0], length_scale,
+                rhs_vis_common_flux_right, config);
+        }
+
+        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        {
+            rhs_tmp[0][ivar] += rhs_vis_common_flux_left[ivar];
+            rhs_tmp[ORDER][ivar] -= rhs_vis_common_flux_right[ivar];
+        }
+
+        DataType rhs_nipg_left[NSP][NCONSRV];
+        DataType rhs_nipg_right[NSP][NCONSRV];
+        DataType beta = DataType(1.0);
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                rhs_nipg_right[isp][ivar] =
+                    -DataType(0.5) * beta * config.nu *
+                    (right_bc_u_out[ivar] - right_bc_u_in[ivar]) *
+                    getDMatrix<DataType, ORDER>()[ORDER][isp] / local_det_jac;
+                rhs_nipg_left[isp][ivar] =
+                    -DataType(0.5) * beta * config.nu *
+                    (left_bc_u_out[ivar] - left_bc_u_in[ivar]) *
+                    getDMatrix<DataType, ORDER>()[0][isp] / local_det_jac *
+                    DataType(-1.0);
+            }
+        }
+        for (int isp = 0; isp < NSP; isp++)
+        {
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                rhs_tmp[isp][ivar] +=
+                    rhs_nipg_left[isp][ivar] + rhs_nipg_right[isp][ivar];
+            }
+        }
+    }
+    else
+    {
+        // 无粘性项，无需处理
+    }
+
+    // 质量矩阵求逆
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -305,206 +366,6 @@ void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
     }
 }
 
-void Solver::compPredictionEntropy(const DataType (&flux)[NSP][NCONSRV],
-                                   const DataType (&consrv)[NSP][NCONSRV],
-                                   const DataType &local_det_jac,
-                                   DataType (&rhs_predict)[NSP][NCONSRV])
-{
-#ifdef LAD
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {
-            for (int jsp = 0; jsp < NSP; jsp++)
-            {
-                rhs_predict[isp][ivar] -=
-                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 0.5 *
-                    (flux[jsp][ivar] + flux[isp][ivar]) / local_det_jac;
-            }
-        }
-    }
-#endif
-
-#ifdef BURGERS
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {
-            for (int jsp = 0; jsp < NSP; jsp++)
-            {
-                rhs_predict[isp][ivar] -=
-                    2.0 * getDMatrix<DataType, ORDER>()[isp][jsp] * 1.0 / 6.0 *
-                    (consrv[isp][ivar] * consrv[isp][ivar] +
-                     consrv[jsp][ivar] * consrv[isp][ivar] +
-                     consrv[jsp][ivar] * consrv[jsp][ivar]) /
-                    local_det_jac;
-            }
-        }
-    }
-#endif
-
-#ifdef NS
-
-    DataType primtv[NSP][NPRIMTV];
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        Consrv2Primtv(consrv[isp], primtv[isp]);
-    }
-    // Chandrashekar
-    // for (int isp = 0; isp < NSP; isp++)
-    // {
-    //     // fs_0
-
-    //     for (int jsp = 0; jsp < NSP; jsp++)
-    //     {
-    //         DataType rho_bar_log;
-    //         DataType rho_R = primtv[isp][0];
-    //         DataType rho_L = primtv[jsp][0];
-    //         if (std::abs(rho_R - rho_L) / (std::abs(rho_L) + 1e-12) < 1e-6)
-    //         {
-    //             rho_bar_log = rho_L;
-    //         }
-    //         else
-    //         {
-    //             rho_bar_log =
-    //                 (rho_R - rho_L) / (std::log(rho_R) - std::log(rho_L));
-    //         }
-    //         DataType u_R = primtv[isp][1];
-    //         DataType u_L = primtv[jsp][1];
-    //         DataType u_bar = 0.5 * (u_R + u_L);
-    //         DataType fs_0 = rho_bar_log * u_bar;
-    //         rhs_predict[isp][0] -= 2.0 *
-    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
-    //                                fs_0 / local_det_jac;
-
-    //         DataType rho_bar = 0.5 * (rho_R + rho_L);
-
-    //         DataType p_R = primtv[isp][2];
-    //         DataType p_L = primtv[jsp][2];
-    //         DataType beta_R = rho_R / p_R / 2.0;
-    //         DataType beta_L = rho_L / p_L / 2.0;
-    //         DataType beta_bar = 0.5 * (beta_R + beta_L);
-    //         DataType fs_1 = rho_bar / 2.0 / beta_bar + u_bar * fs_0;
-
-    //         rhs_predict[isp][1] -= 2.0 *
-    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
-    //                                fs_1 / local_det_jac;
-
-    //         DataType beta_bar_log;
-    //         if (std::abs(beta_R - beta_L) / (std::abs(beta_L) + 1e-12) <
-    //         1e-6)
-    //         {
-    //             beta_bar_log = beta_L;
-    //         }
-    //         else
-    //         {
-    //             beta_bar_log =
-    //                 (beta_R - beta_L) / (std::log(beta_R) -
-    //                 std::log(beta_L));
-    //         }
-    //         DataType u_square_bar = 0.5 * (u_R * u_R + u_L * u_L);
-    //         DataType fs_2 = (1.0 / (2.0 * (GAMMA - 1.0) * beta_bar_log) -
-    //                          0.5 * u_square_bar) *
-    //                             fs_0 +
-    //                         u_bar * fs_1;
-    //         rhs_predict[isp][2] -= 2.0 *
-    //                                getDMatrix<DataType, ORDER>()[isp][jsp] *
-    //                                fs_2 / local_det_jac;
-    //     }
-    // }
-
-    // Ismail & Roe
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        // fs_0
-        for (int jsp = 0; jsp < NSP; jsp++)
-        {
-            DataType rho_R = primtv[isp][0];
-            DataType rho_L = primtv[jsp][0];
-            DataType p_R = primtv[isp][2];
-            DataType p_L = primtv[jsp][2];
-            DataType u_R = primtv[isp][1];
-            DataType u_L = primtv[jsp][1];
-            DataType z1_L = std::sqrt(rho_L / p_L);
-            DataType z1_R = std::sqrt(rho_R / p_R);
-            DataType z2_L = z1_L * u_L;
-            DataType z2_R = z1_R * u_R;
-            DataType z3_L = z1_L * p_L;
-            DataType z3_R = z1_R * p_R;
-            DataType z2_bar = 0.5 * (z2_L + z2_R);
-            DataType z3_bar_log;
-
-            if (std::abs(z3_R - z3_L) / (std::abs(z3_L) + 1e-12) < 1e-6)
-            {
-                z3_bar_log = z3_L;
-            }
-            else
-            {
-                z3_bar_log = (z3_R - z3_L) / (std::log(z3_R) - std::log(z3_L));
-            }
-
-            DataType fs_1 = z2_bar * z3_bar_log;
-            rhs_predict[isp][0] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_1 / local_det_jac;
-
-            DataType z3_bar = 0.5 * (z3_L + z3_R);
-            DataType z1_bar = 0.5 * (z1_L + z1_R);
-
-            DataType fs_2 = z3_bar / z1_bar + z2_bar / z1_bar * fs_1;
-
-            rhs_predict[isp][1] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_2 / local_det_jac;
-
-            DataType z1_bar_log;
-            if (std::abs(z1_R - z1_L) / (std::abs(z1_L) + 1e-12) < 1e-6)
-            {
-                z1_bar_log = z1_L;
-            }
-            else
-            {
-                z1_bar_log = (z1_R - z1_L) / (std::log(z1_R) - std::log(z1_L));
-            }
-            DataType fs_3 =
-                0.5 * z2_bar / z1_bar *
-                ((GAMMA + 1.0) / (GAMMA - 1.0) * z3_bar_log / z1_bar_log +
-                 fs_2);
-            rhs_predict[isp][2] -= 2.0 *
-                                   getDMatrix<DataType, ORDER>()[isp][jsp] *
-                                   fs_3 / local_det_jac;
-        }
-    }
-#endif
-}
-
-void Solver::compPredictionCR(const DataType (&consrv)[NSP][NCONSRV],
-                              const DataType (&consrv_grad)[NSP][NCONSRV],
-                              DataType (&rhs_predict)[NSP][NCONSRV])
-{
-
-    for (int isp = 0; isp < NSP; isp++)
-    {
-        DataType rho = consrv[isp][0];
-        DataType rho_u = consrv[isp][1];
-        DataType rho_E = consrv[isp][2];
-        DataType d_rho = consrv_grad[isp][0];
-        DataType d_rhou = consrv_grad[isp][1];
-        DataType d_rhoE = consrv_grad[isp][2];
-        DataType u = rho_u / rho;
-
-        rhs_predict[isp][0] -= d_rhou;
-        rhs_predict[isp][1] -= (-0.5 * u * u * (3.0 - GAMMA)) * d_rho +
-                               u * (3.0 - GAMMA) * d_rhou +
-                               (GAMMA - 1.0) * d_rhoE;
-        rhs_predict[isp][2] -=
-            (-rho_u * rho_E / rho / rho * GAMMA + (GAMMA - 1.0) * u * u * u) *
-                d_rho +
-            (rho_E / rho * GAMMA - 1.5 * (GAMMA - 1.0) * u * u) * d_rhou +
-            GAMMA * u * d_rhoE;
-    }
-}
-
 void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
@@ -518,169 +379,111 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 
     for (int isp = 0; isp < NSP; isp++)
     {
-        computeFlux(element.u_consrv[isp], flux_tmp[isp], config.a);
+        physics->computeFlux(element.u_consrv[isp], flux_tmp[isp], config);
     }
-#if 0
-    if (iele == 0)
-    {
-        for (int isp = 0; isp < NSP; isp++)
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                printf("FR: ielem =%d, u_consrv[%d][%d]=%f\n", iele, isp, ivar,
-                       element.u_consrv[isp][ivar]);
-                printf("FR: ielem =%d, flux_tmp[%d][%d]=%f\n", iele, isp, ivar,
-                       flux_tmp[isp][ivar]);
-            }
-    }
-#endif
 
     DataType rhs_prediction[NSP][NCONSRV]{};
 
-    if (config.enable_entropy_modify == true)
+    // 熵修正或标准LP预测
+    if (config.enable_entropy_modify && physics->hasEntropyModify())
     {
-        compPredictionEntropy(flux_tmp, element.u_consrv, local_det_jac,
-                              rhs_prediction);
-        // for (int isp = 0; isp < NSP; isp++)
-        // {
-        //     if (iele == 31)
-        //         printf("iele=%d,flux_tmp[%d]=%f,rhs_predition[%d]=%f\n",
-        //         iele,
-        //                isp, flux_tmp[isp][0], isp, rhs_prediction[isp][0]);
-        // }
+        physics->compPredictionEntropy(flux_tmp, element.u_consrv,
+                                       local_det_jac, rhs_prediction, config);
     }
     else
     {
         compPredictionLP(flux_tmp, local_det_jac, rhs_prediction);
     }
 
-#if 0
-    if (iele == 0)
-    {
-        for (int isp = 0; isp < NSP; isp++)
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                printf("FR: ielem =%d, rhs_prediction[%d][%d]=%f\n", iele, isp,
-                       ivar, rhs_prediction[isp][ivar]);
-            }
-    }
-#endif
-
-    // at  j - 1/2
+    // 界面通量
     DataType common_flux_left[NCONSRV];
-    computeRiemannFlux(element_l.u_consrv[ORDER], element.u_consrv[0],
-                       common_flux_left, config.a);
-#if 0
-    if (iele == 0)
+    if (iele == 0 && config.bc_type != 0)
     {
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {
-            printf("FR: ielem =%d, common_flux_left[%d]=%f, ul=%f,ur=%f, "
-                   "config.a = %f\n",
-                   iele, ivar, common_flux_left[ivar],
-                   element_l.u_consrv[ORDER][0], element.u_consrv[0][0],
-                   config.a);
-        }
+        // Dirichlet边界
+        DataType uL_bc[NCONSRV];
+        DataType uL_grad_bc[NCONSRV];
+        getBoundaryState(-1, uL_bc, uL_grad_bc);
+        physics->computeRiemannFlux(uL_bc, element.u_consrv[0],
+                                    common_flux_left, config);
     }
-#endif
-#ifdef NS
-    if (iele == 0)
+    else
     {
-        computeRiemannFlux(element.u_consrv[0], element.u_consrv[0],
-                           common_flux_left, config.a);
+        physics->computeRiemannFlux(element_l.u_consrv[ORDER],
+                                    element.u_consrv[0], common_flux_left,
+                                    config);
     }
-#endif
-    // at j+1/2
+
     DataType common_flux_right[NCONSRV];
-    computeRiemannFlux(element.u_consrv[ORDER], element_r.u_consrv[0],
-                       common_flux_right, config.a);
-#ifdef NS
-    if (iele == config.n_ele - 1)
+    if (iele == config.n_ele - 1 && config.bc_type != 0)
     {
-        computeRiemannFlux(element.u_consrv[ORDER], element.u_consrv[ORDER],
-                           common_flux_right, config.a);
+        // Dirichlet边界
+        DataType uR_bc[NCONSRV];
+        DataType uR_grad_bc[NCONSRV];
+        getBoundaryState(1, uR_bc, uR_grad_bc);
+        physics->computeRiemannFlux(element.u_consrv[ORDER], uR_bc,
+                                    common_flux_right, config);
     }
-#endif
+    else
+    {
+        physics->computeRiemannFlux(element.u_consrv[ORDER],
+                                    element_r.u_consrv[0], common_flux_right,
+                                    config);
+    }
 
+    // 修正项
     DataType rhs_correction[NSP][NCONSRV]{};
-
     DataType flux_tmp2[NSP][NCONSRV]{};
+
     for (int ivar = 0; ivar < NCONSRV; ivar++)
     {
-
         flux_tmp2[0][ivar] =
             -1.0 * (common_flux_left[ivar] - flux_tmp[0][ivar]);
         flux_tmp2[ORDER][ivar] =
             1.0 * (common_flux_right[ivar] - flux_tmp[ORDER][ivar]);
     }
+
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
             for (int jsp = 0; jsp < NSP; jsp++)
             {
-                if (config.enable_entropy_modify == true)
-                {
-                    rhs_correction[isp][ivar] -=
-                        invertMatrix<DataType, ORDER>(
-                            getMMatrixEntropy<DataType, ORDER>())[isp][jsp] *
-                        flux_tmp2[jsp][ivar] / local_det_jac;
-                }
-                else
-                {
-                    rhs_correction[isp][ivar] -=
-                        invertMatrix<DataType, ORDER>(
-                            getMMatrix<DataType, ORDER>())[isp][jsp] *
-                        flux_tmp2[jsp][ivar] / local_det_jac;
-                }
+                auto matrix =
+                    config.enable_entropy_modify && physics->hasEntropyModify()
+                        ? getMMatrixEntropy<DataType, ORDER>()
+                        : getMMatrix<DataType, ORDER>();
+                rhs_correction[isp][ivar] -=
+                    invertMatrix<DataType, ORDER>(matrix)[isp][jsp] *
+                    flux_tmp2[jsp][ivar] / local_det_jac;
             }
         }
     }
 
+    // 组装最终RHS
     for (int isp = 0; isp < NSP; isp++)
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            rhs_pool[iele].rhs[isp][ivar] = DataType(0.0);
-            rhs_pool[iele].rhs[isp][ivar] +=
+            rhs_pool[iele].rhs[isp][ivar] =
                 rhs_prediction[isp][ivar] + rhs_correction[isp][ivar];
         }
     }
 }
+
 void Solver::computeRhs(Rhs *rhs_pool, const Element *elem_pool)
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        // set rhs=0
         if (config.dg_fr_type == 0)
         {
             computeElemRhsDG(rhs_pool, elem_pool, iele);
-#if 0
-            if (iele >= 98 && iele <= 100)
-            {
-                for (int isp = 0; isp < NSP; isp++)
-                    for (int ivar = 0; ivar < NCONSRV; ivar++)
-                        printf("DG: rhs_pool[%d].rhs[%d][%d]=%f\n", iele,
-                        isp,
-                               ivar, rhs_pool[iele].rhs[isp][ivar]);
-            }
-#endif
         }
         else if (config.dg_fr_type == 1)
         {
             computeElemRhsFR(rhs_pool, elem_pool, iele);
-#if 0
-            if (iele == 0)
-            {
-                for (int isp = 0; isp < NSP; isp++)
-                    for (int ivar = 0; ivar < NCONSRV; ivar++)
-                        printf("FR: rhs_pool[%d].rhs[%d][%d]=%f\n", iele, isp,
-                               ivar, rhs_pool[iele].rhs[isp][ivar]);
-            }
-#endif
         }
     }
-    return;
-};
+}
 
 void Solver::compGradAndAvg()
 {
@@ -689,39 +492,33 @@ void Solver::compGradAndAvg()
         computeElementGrad(iele);
         ComputeElementAvg(iele);
     }
-    return;
 }
 
 std::pair<DataType, int> Solver::Minmod(DataType a, DataType b, DataType c)
 {
-    // 检查所有参数是否同号
     if (a > -1e-6 && a < 1e-6)
         return {DataType(a), 0};
-    ;
 
     const bool all_nonneg = (a >= 0) && (b >= 0) && (c >= 0);
     const bool all_nonpos = (a <= 0) && (b <= 0) && (c <= 0);
 
-    // 符号不一致时激活 Limiter
     if (!(all_nonneg || all_nonpos))
     {
-        return {DataType(0), 1}; // 返回 0 且标记 Limiter 激活
+        return {DataType(0), 1};
     }
 
-    // 同号时选择绝对值最小的参数
     const DataType min_abs = std::min({std::abs(a), std::abs(b), std::abs(c)});
     const DataType result = (a > 0) ? min_abs : -min_abs;
 
-    // 检查是否实际应用了 Limiter（是否返回了非原始输入值）
     const bool limiter_activated = (std::abs(result - a) > 1e-5 ? 1 : 0);
     return {result, limiter_activated};
 }
 
 void Solver::TvdLimiter()
 {
-
     bool islimited[config.n_ele];
     DataType c1[config.n_ele][NCONSRV];
+
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         Element &element = elem_pool_old[TORDER][iele];
@@ -755,7 +552,6 @@ void Solver::TvdLimiter()
             {
                 if (element.islimited[ivar] > 0)
                 {
-
                     element.u_consrv[isp][ivar] =
                         element.u_avg[ivar] +
                         c1[iele][ivar] * getLGLPoints<DataType, ORDER>()[isp];
@@ -769,7 +565,7 @@ void Solver::TvdLimiter()
 
 void Solver::timeNewExplicitSchemeK1()
 {
-    // compute u*_i
+    // 计算 u*_i
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         for (int isp = 0; isp < NSP; isp++)
@@ -815,12 +611,9 @@ void Solver::timeNewExplicitSchemeK1()
                 DataType rhs1 = rhs_pool_tmp[1][iele].rhs[isp][ivar];
                 elem_pool_old[0][iele].u_consrv[isp][ivar] =
                     (1.0 / w - 1.0) * u_nm1_0 + (2.0 - 1.0 / w) * u_nm1_1 +
-
                     (rhs0 * (2.0 / w - 1.0) - rhs1) * config.dt * 0.5;
                 elem_pool_old[1][iele].u_consrv[isp][ivar] =
-                    1.0 * u_nm1_1 +
-
-                    (rhs0 + rhs1) * config.dt * 0.5;
+                    1.0 * u_nm1_1 + (rhs0 + rhs1) * config.dt * 0.5;
             }
         }
     }
@@ -839,10 +632,9 @@ void Solver::timeNewExplicitSchemeK1()
 
 void Solver::timeRK1()
 {
-
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
-    {   
+    {
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -852,13 +644,11 @@ void Solver::timeRK1()
             }
         }
     }
-
     compGradAndAvg();
 }
 
 void Solver::timeRK2()
 {
-
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
 
     for (int iele = 0; iele < config.n_ele; iele++)
@@ -867,7 +657,6 @@ void Solver::timeRK2()
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-
                 elem_pool_tmp[TORDER][iele].u_consrv[isp][ivar] =
                     elem_pool_old[TORDER][iele].u_consrv[isp][ivar] +
                     rhs_pool_tmp[TORDER][iele].rhs[isp][ivar] * config.dt;
@@ -879,7 +668,6 @@ void Solver::timeRK2()
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_tmp[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -894,7 +682,6 @@ void Solver::timeRK2()
             }
         }
     }
-
     compGradAndAvg();
 }
 
@@ -957,9 +744,7 @@ void Solver::computeElementGrad(int ielem)
 {
     for (int itp = 0; itp < NTP; itp++)
     {
-
         Element &element = elem_pool_old[itp][ielem];
-
         DataType local_det_jac = geom_pool[ielem].local_det_jac;
 
         for (int isp = 0; isp < NSP; isp++)
@@ -977,6 +762,7 @@ void Solver::computeElementGrad(int ielem)
         }
     }
 }
+
 void Solver::ComputeElementAvg(int ielem)
 {
     for (int itp = 0; itp < NTP; itp++)
@@ -1021,9 +807,8 @@ void Solver::Output(const std::string &filename)
 
         for (int isp = 0; isp < NSP; isp++)
         {
-
             DataType primtv[NPRIMTV];
-            Consrv2Primtv(elem.u_consrv[isp], primtv);
+            physics->cons2prim(elem.u_consrv[isp], primtv);
             for (int ivar = 0; ivar < NPRIMTV; ivar++)
             {
                 elem_primtv[isp][ivar] = primtv[ivar];
@@ -1036,11 +821,9 @@ void Solver::Output(const std::string &filename)
                 ofile << elem_primtv[isp][ivar] << ",";
             }
         }
-
         ofile << std::endl;
     }
-    return;
-};
+}
 
 void Solver::OutputAvg(const std::string &filename)
 {
@@ -1059,19 +842,145 @@ void Solver::OutputAvg(const std::string &filename)
     for (int iele = 0; iele < config.n_ele; iele++)
     {
         const Element &elem = elem_pool_old[TORDER][iele];
-
         ofile << geom_pool[iele].x[0] + 0.5 * geom_pool[iele].dx << ",";
 
         DataType elem_primtv_ave[NPRIMTV];
-
-        Consrv2Primtv(elem.u_avg, elem_primtv_ave);
+        physics->cons2prim(elem.u_avg, elem_primtv_ave);
 
         for (int ivar = 0; ivar < NPRIMTV; ivar++)
         {
             ofile << elem_primtv_ave[ivar] << ",";
         }
-
         ofile << std::endl;
     }
-    return;
-};
+}
+
+void Solver::computeCflDt()
+{
+    if (config.cfl <= 0.0)
+    {
+        return; // 如果cfl <= 0，不自动计算dt
+    }
+
+    DataType min_dt = 1e20;
+
+    for (int iele = 0; iele < config.n_ele; iele++)
+    {
+        DataType dx = geom_pool[iele].dx;
+        DataType local_det_jac = geom_pool[iele].local_det_jac;
+        const Element &elem = elem_pool_old[TORDER][iele];
+
+        // 获取原始变量用于计算特征值
+        DataType prim[NPRIMTV];
+        physics->cons2prim(elem.u_avg, prim);
+
+        DataType dt_elem = 1e20;
+
+        // 平流项CFL条件: dt <= cfl * dx / |lambda_max|
+        // 对于不同方程，lambda_max不同
+        DataType lambda_max = 0.0;
+
+        if (physics->name() == "LAD")
+        {
+            // 线性平流: lambda = a
+            lambda_max = std::abs(config.a);
+        }
+        else if (physics->name() == "Burgers")
+        {
+            // Burgers: lambda = u
+            lambda_max = std::abs(prim[0]);
+        }
+        else if (physics->name() == "NS")
+        {
+            // Euler/NS: lambda = |u| + c
+            DataType c = std::sqrt(GAMMA * prim[2] / prim[0]);
+            lambda_max = std::abs(prim[1]) + c;
+        }
+
+        if (lambda_max > 1e-10)
+        {
+            DataType dt_conv =
+                config.cfl * dx / (2.0 * ORDER + 1.0) / lambda_max;
+            dt_elem = std::min(dt_elem, dt_conv);
+        }
+
+        // 扩散项CFL条件: dt <= cfl * dx^2 / (4 * nu)
+        // 对于二阶扩散项，显式格式的稳定性条件
+        if (physics->hasDiffusion() && config.nu > 1e-10)
+        {
+            DataType dt_diff = config.cfl * dx * dx / (2.0 * ORDER + 1.0) /
+                               (2.0 * ORDER + 1.0) / config.nu;
+            dt_elem = std::min(dt_elem, dt_diff);
+        }
+
+        min_dt = std::min(min_dt, dt_elem);
+    }
+
+    config.dt = min_dt;
+    std::cout << "CFL: " << config.cfl << ", Computed dt: " << config.dt
+              << std::endl;
+}
+
+void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
+                              DataType u_grad_bc[NCONSRV]) const
+{
+    // bc_pos: -1 = 左边界, +1 = 右边界
+
+    if (config.bc_type == 0)
+    {
+        // Periodic边界: 使用对端单元的值
+        if (bc_pos == -1)
+        {
+            // 左边界: 使用最后一个单元的值
+            const Element &elem_right = elem_pool_old[TORDER][config.n_ele - 1];
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                u_bc[ivar] = elem_right.u_consrv[ORDER][ivar];
+                u_grad_bc[ivar] = elem_right.u_grad_consrv[ORDER][ivar];
+            }
+        }
+        else
+        {
+            // 右边界: 使用第一个单元的值
+            const Element &elem_left = elem_pool_old[TORDER][0];
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                u_bc[ivar] = elem_left.u_consrv[0][ivar];
+                u_grad_bc[ivar] = elem_left.u_grad_consrv[0][ivar];
+            }
+        }
+    }
+    else
+    {
+        // Dirichlet边界: 使用给定的边界值
+        DataType bc_value = (bc_pos == -1) ? config.bc_left : config.bc_right;
+
+        // 将边界值作为原始变量，然后转换为守恒变量
+        DataType prim[NPRIMTV] = {bc_value};
+        DataType u_b_input[NCONSRV];
+        physics->prim2cons(prim, u_b_input);
+
+        if (bc_pos == -1)
+        {
+            // 左边界: 使用最后一个单元的值
+            const Element &elem_right = elem_pool_old[TORDER][0];
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
+                             elem_right.u_consrv[0][ivar];
+                u_grad_bc[ivar] = elem_right.u_grad_consrv[0][ivar];
+            }
+        }
+        else
+        {
+            // 右边界: 使用第一个单元的值
+            const Element &elem_left = elem_pool_old[TORDER][config.n_ele - 1];
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
+                             elem_left.u_consrv[ORDER][ivar];
+                u_grad_bc[ivar] = elem_left.u_grad_consrv[ORDER][ivar];
+            }
+        }
+    }
+}

@@ -25,20 +25,33 @@ struct adl_serializer<Config>
                  {"enable_entropy_modify", c.enable_entropy_modify},
                  {"dg_fr_type", c.dg_fr_type},
                  {"weight", c.weight},
-                 {"time_scheme_type", c.time_scheme_type}};
+                 {"time_scheme_type", c.time_scheme_type},
+                 {"vis_scheme_type", c.vis_scheme_type},
+                 {"ip_coef", c.ip_coef},
+                 {"cfl", c.cfl},
+                 {"bc_type", c.bc_type},
+                 {"bc_left", c.bc_left},
+                 {"bc_right", c.bc_right}};
     }
     static void from_json(const json &j, Config &c)
     {
         j.at("x0").get_to(c.x0);
         j.at("x1").get_to(c.x1);
         j.at("n_ele").get_to(c.n_ele);
-        j.at("dt").get_to(c.dt);
         j.at("total_time").get_to(c.total_time);
         j.at("output_time_step").get_to(c.output_time_step);
         j.at("a").get_to(c.a);
-        j.at("nu").get_to(c.nu);
+        auto it = j.find("nu");
+        if (it != j.end())
+        {
+            it->get_to(c.nu);
+        }
+        else
+        {
+            c.nu = 0.0;
+        }
         j.at("output_dir").get_to(c.output_dir);
-        auto it = j.find("limiter_type");
+        it = j.find("limiter_type");
         if (it != j.end())
         {
             it->get_to(c.limiter_type);
@@ -62,6 +75,58 @@ struct adl_serializer<Config>
         if (it != j.end())
         {
             it->get_to(c.dg_fr_type);
+        }
+        it = j.find("vis_scheme_type");
+        if (it != j.end())
+        {
+            it->get_to(c.vis_scheme_type);
+        }
+        it = j.find("ip_coef");
+        if (it != j.end())
+        {
+            it->get_to(c.ip_coef);
+        }
+
+        it = j.find("dt");
+        if (it != j.end())
+        {
+            it->get_to(c.dt);
+        }
+
+        it = j.find("cfl");
+        if (it != j.end())
+        {
+            it->get_to(c.cfl);
+        }
+
+        it = j.find("bc_type");
+        if (it != j.end())
+        {
+            it->get_to(c.bc_type);
+        }
+        else
+        {
+            c.bc_type = 0;
+        }
+
+        it = j.find("bc_left");
+        if (it != j.end())
+        {
+            it->get_to(c.bc_left);
+        }
+        else
+        {
+            c.bc_left = 0.0;
+        }
+
+        it = j.find("bc_right");
+        if (it != j.end())
+        {
+            it->get_to(c.bc_right);
+        }
+        else
+        {
+            c.bc_right = 0.0;
         }
     }
 };
