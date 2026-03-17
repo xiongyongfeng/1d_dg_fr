@@ -64,7 +64,7 @@ for case in cases:
 
     # 运行计算
     print(f"Running case: {case['name']}")
-    subprocess.run(["../../main_ns", config_file])
+    subprocess.run(["../main_ns_k2", config_file])
 
     # 找到最后一个输出文件
     csv_files = [

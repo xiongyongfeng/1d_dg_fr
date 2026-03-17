@@ -7,7 +7,12 @@ using DataType = double; // 双精度类型
 #else
 using DataType = float; // 单精度类型
 #endif
-constexpr size_t ORDER = 1;
+
+// ORDER 由 CMake 通过 -DDG_ORDER=x 传入
+#ifndef DG_ORDER
+#define DG_ORDER 2  // 默认值
+#endif
+constexpr size_t ORDER = DG_ORDER;
 constexpr size_t NSP = ORDER + 1;
 constexpr size_t SPACEDIM = 1;
 
