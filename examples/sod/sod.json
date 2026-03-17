@@ -1,12 +1,11 @@
 {
     "x0": -5.0,
     "x1": 5.0,
-    "n_ele": 100,
+    "n_ele": 400,
     "total_time": 1.2999999523162842,
     "output_time_step": 0.10000000149011612,
     "cfl": 0.4,
     "dt": 1e-08,
-    "output_dir": "./soln_DG_tvdRK1_200",
     "limiter_type": 1,
     "dg_fr_type": 0,
     "enable_entropy_modify": false,
@@ -15,5 +14,6 @@
     "bc_type": 2,
     "bc_left": 0.0,
     "bc_right": 0.0,
-    "common_flux_type": 3
+    "common_flux_type": 5,
+    "output_dir": "./soln_DG_tvdRK1_200"
 }

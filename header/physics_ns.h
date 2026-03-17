@@ -1,7 +1,9 @@
 #pragma once
 #include "config.h"
 #include "constants.h"
+#include "macro.h"
 #include "physics.h"
+#include <algorithm>
 #include <cmath>
 
 /**
@@ -107,136 +109,394 @@ class PhysicsNS : public PhysicsModel<ConfigNS>
         }
     }
 
+    // void computeRiemannFluxAUSM(const DataType consrv_l[NCONSRV],
+    //                             const DataType consrv_r[NCONSRV],
+    //                             DataType flux[NCONSRV], const ConfigNS
+    //                             &config, DataType normal[SPACEDIM]) const
+    // {
+    //     const double gamma = GAMMA;
+    //     const double gm1 = gamma - 1.0;
+
+    //     // --- 1. 恢复原始变量 (Left) ---
+    //     double rhoL = consrv_l[0];
+    //     double invRhoL = 1.0 / rhoL;
+    //     double uL[3] = {0.0, 0.0, 0.0};
+    //     double u2L = 0.0;
+    //     for (int i = 0; i < SPACEDIM; ++i)
+    //     {
+    //         uL[i] = consrv_l[i + 1] * invRhoL;
+    //         u2L += uL[i] * uL[i];
+    //     }
+    //     double eL = consrv_l[NCONSRV - 1] * invRhoL;
+    //     double pL = gm1 * (eL - 0.5 * u2L) * rhoL;
+    //     double aL = std::sqrt(gamma * pL * invRhoL);
+
+    //     // --- 2. 恢复原始变量 (Right) ---
+    //     double rhoR = consrv_r[0];
+    //     double invRhoR = 1.0 / rhoR;
+    //     double uR[3] = {0.0, 0.0, 0.0};
+    //     double u2R = 0.0;
+    //     for (int i = 0; i < SPACEDIM; ++i)
+    //     {
+    //         uR[i] = consrv_r[i + 1] * invRhoR;
+    //         u2R += uR[i] * uR[i];
+    //     }
+    //     double eR = consrv_r[NCONSRV - 1] * invRhoR;
+    //     double pR = gm1 * (eR - 0.5 * u2R) * rhoR;
+    //     double aR = std::sqrt(gamma * pR * invRhoR);
+
+    //     // --- 3. 法向速度与马赫数 ---
+    //     double unL = 0.0, unR = 0.0;
+    //     for (int i = 0; i < SPACEDIM; ++i)
+    //     {
+    //         unL += uL[i] * normal[i];
+    //         unR += uR[i] * normal[i];
+    //     }
+
+    //     double ML = unL / aL;
+    //     double MR = unR / aR;
+
+    //     // --- 4. Splitting Functions ---
+    //     auto getMPlus = [](double M)
+    //     {
+    //         if (std::abs(M) <= 1.0)
+    //         {
+    //             return 0.25 * (M + 1.0) * (M + 1.0) +
+    //                    0.125 * (M * M - 1.0) * (M * M - 1.0);
+    //         }
+    //         return 0.5 * (M + std::abs(M));
+    //     };
+
+    //     auto getMMinus = [](double M)
+    //     {
+    //         if (std::abs(M) <= 1.0)
+    //         {
+    //             return -0.25 * (M - 1.0) * (M - 1.0) -
+    //                    0.125 * (M * M - 1.0) * (M * M - 1.0);
+    //         }
+    //         return 0.5 * (M - std::abs(M));
+    //     };
+
+    //     auto getPPlus = [](double M)
+    //     {
+    //         if (std::abs(M) <= 1.0)
+    //         {
+    //             return 0.25 * (M + 1.0) * (M + 1.0) * (2.0 - M) +
+    //                    0.1875 * M * (M * M - 1.0) * (M * M - 1.0);
+    //         }
+    //         return 0.5 * (1.0 + std::copysign(1.0, M));
+    //     };
+
+    //     auto getPMinus = [](double M)
+    //     {
+    //         if (std::abs(M) <= 1.0)
+    //         {
+    //             return 0.25 * (M - 1.0) * (M - 1.0) * (2.0 + M) -
+    //                    0.1875 * M * (M * M - 1.0) * (M * M - 1.0);
+    //         }
+    //         return 0.5 * (1.0 - std::copysign(1.0, M));
+    //     };
+
+    //     double Mplus_L = getMPlus(ML);
+    //     double Mminus_R = getMMinus(MR);
+    //     double Pplus_L = getPPlus(ML);
+    //     double Pminus_R = getPMinus(MR);
+
+    //     // --- 5. Interface Quantities ---
+    //     double M_half = Mplus_L + Mminus_R;
+    //     double p_half = Pplus_L * pL + Pminus_R * pR;
+    //     // double a_half = std::min(aL, aR);
+    //     double a_half = (std::sqrt(rhoL) * aL + std::sqrt(rhoR) * aR) /
+    //                     (std::sqrt(rhoL) + std::sqrt(rhoR));
+
+    //     double du_n = unR - unL;
+    //     double p_diss =
+    //         -1.0 * Pplus_L * Pminus_R * (rhoL + rhoR) * a_half * du_n;
+    //     double p_final = p_half + p_diss;
+
+    //     // --- 6. Upwind State Selection ---
+    //     const DataType *U = (M_half >= 0.0) ? consrv_l : consrv_r;
+    //     double rho_up = U[0];
+    //     double invRho_up = 1.0 / rho_up;
+
+    //     double u2_up = 0.0;
+    //     for (int i = 0; i < SPACEDIM; ++i)
+    //     {
+    //         double ui = U[i + 1] * invRho_up;
+    //         u2_up += ui * ui;
+    //     }
+    //     double e_up = U[NCONSRV - 1] * invRho_up;
+    //     double p_up = gm1 * (e_up - 0.5 * u2_up) * rho_up;
+    //     double H_up = e_up + p_up * invRho_up; // Total Enthalpy
+    //     double rhoH_up = rho_up * H_up;
+
+    //     double Ma = M_half * a_half;
+
+    //     // --- 7. Compute Flux ---
+    //     flux[0] = Ma * rho_up; // Mass
+
+    //     for (int i = 0; i < SPACEDIM; ++i)
+    //     {
+    //         flux[i + 1] = Ma * U[i + 1] + p_final * normal[i]; // Momentum
+    //     }
+
+    //     flux[NCONSRV - 1] = Ma * rhoH_up; // Energy
+    // }
+
+    void computeRiemannFluxAUSMPLUSUP(const DataType consrv_l[NCONSRV],
+                                      const DataType consrv_r[NCONSRV],
+                                      DataType flux[NCONSRV],
+                                      const ConfigNS &config,
+                                      DataType normal[SPACEDIM]) const
+    {
+        (void)config;
+        const DataType gamma = GAMMA;
+        const DataType gm1 = gamma - DataType(1.0);
+
+        // --- 1. 恢复原始变量 ---
+        DataType prim_l[NPRIMTV], prim_r[NPRIMTV];
+        cons2prim(consrv_l, prim_l);
+        cons2prim(consrv_r, prim_r);
+
+        DataType rho_l = prim_l[0];
+        DataType rho_r = prim_r[0];
+        DataType p_l = prim_l[SPACEDIM + 1];
+        DataType p_r = prim_r[SPACEDIM + 1];
+
+        // 法向速度
+        DataType un_l = DataType(0.0), un_r = DataType(0.0);
+        for (int i = 0; i < SPACEDIM; ++i)
+        {
+            un_l += prim_l[i + 1] * normal[i];
+            un_r += prim_r[i + 1] * normal[i];
+        }
+
+        // 声速
+        DataType a_l = std::sqrt(GetSoundSpeed(prim_l));
+        DataType a_r = std::sqrt(GetSoundSpeed(prim_r));
+
+        DataType H_l = (consrv_l[NCONSRV - 1] + p_l) / rho_l;
+        DataType H_r = (consrv_r[NCONSRV - 1] + p_r) / rho_r;
+
+        DataType astarL = sqrt(2.0 * (gamma - 1.0) / (gamma + 1.0) * H_l);
+        DataType astarR = sqrt(2.0 * (gamma - 1.0) / (gamma + 1.0) * H_r);
+
+        DataType ahatL = astarL * astarL / std::max(astarL, un_l);
+        DataType ahatR = astarR * astarR / std::max(astarR, -un_r);
+
+        DataType aF = std::min(ahatL, ahatR);
+
+        // --- 2. 马赫数 ---
+        DataType ML = un_l / aF;
+        DataType MR = un_r / aF;
+        DataType MFsq = 0.5 * (ML * ML + MR * MR);
+        DataType M_inf = 0.3;
+        DataType Mrefsq = std::min(1.0, std::max(MFsq, M_inf * M_inf));
+        DataType fa = 2.0 * std::sqrt(Mrefsq) - Mrefsq;
+        DataType alpha = 3.0 / 16.0 * (-4.0 + 5.0 * fa * fa);
+        DataType beta = 1.0 / 8.0;
+
+        // --- 3. 分裂函数 (AUSM+ 格式) ---
+        auto MPlus = [&beta](DataType M) -> DataType
+        {
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M + DataType(1.0)) *
+                           (M + DataType(1.0)) +
+                       beta * (M * M - DataType(1.0)) * (M * M - DataType(1.0));
+            return DataType(0.5) * (M + std::abs(M));
+        };
+
+        auto MMinus = [&beta](DataType M) -> DataType
+        {
+            if (std::abs(M) <= DataType(1.0))
+                return -DataType(0.25) * (M - DataType(1.0)) *
+                           (M - DataType(1.0)) -
+                       beta * (M * M - DataType(1.0)) * (M * M - DataType(1.0));
+            return DataType(0.5) * (M - std::abs(M));
+        };
+
+        auto PPlus = [&alpha](DataType M) -> DataType
+        {
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M + DataType(1.0)) *
+                           (M + DataType(1.0)) * (DataType(2.0) - M) +
+                       alpha * M * (M * M - DataType(1.0)) *
+                           (M * M - DataType(1.0));
+            return DataType(0.5) *
+                   (DataType(1.0) + std::copysign(DataType(1.0), M));
+        };
+
+        auto PMinus = [&alpha](DataType M) -> DataType
+        {
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M - DataType(1.0)) *
+                           (M - DataType(1.0)) * (DataType(2.0) + M) -
+                       alpha * M * (M * M - DataType(1.0)) *
+                           (M * M - DataType(1.0));
+            return DataType(0.5) *
+                   (DataType(1.0) - std::copysign(DataType(1.0), M));
+        };
+
+        DataType Mplus_L = MPlus(ML);
+        DataType Mminus_R = MMinus(MR);
+        DataType Pplus_L = PPlus(ML);
+        DataType Pminus_R = PMinus(MR);
+
+        DataType Kp = DataType(0.25);
+        DataType Ku = DataType(0.75);
+        DataType sigma = DataType(1.0);
+
+        DataType rhoF = 0.5 * (rho_l + rho_r);
+        DataType Mp = -Kp / fa * std::max(1.0 - sigma * MFsq, 0.0) *
+                      (p_r - p_l) / (rhoF * aF * aF);
+        DataType P_u =
+            -Ku * fa * Pplus_L * Pminus_R * 2.0 * rhoF * aF * (un_r - un_l);
+
+        // --- 4. 界面量 ---
+        DataType M_half = Mplus_L + Mminus_R + Mp;
+        DataType p_half = Pplus_L * p_l + Pminus_R * p_r + P_u;
+
+        // --- 5. 上风状态选择 ---
+        const DataType *U_up = (M_half >= DataType(0.0)) ? consrv_l : consrv_r;
+        DataType rho_up = U_up[0];
+        DataType inv_rho_up = DataType(1.0) / rho_up;
+
+        // 计算上风状态的总焓
+        DataType u2_up = DataType(0.0);
+        for (int i = 0; i < SPACEDIM; ++i)
+        {
+            DataType ui = U_up[i + 1] * inv_rho_up;
+            u2_up += ui * ui;
+        }
+        DataType E_up = U_up[SPACEDIM + 1];
+        DataType p_up = gm1 * (E_up - DataType(0.5) * rho_up * u2_up);
+        DataType H_up = (E_up + p_up) * inv_rho_up;
+
+        DataType a_up = (M_half >= DataType(0.0)) ? a_l : a_r;
+
+        // --- 6. 计算通量 ---
+        // 质量通量
+        flux[0] = M_half * aF * rho_up;
+
+        // 动量通量
+        for (int i = 0; i < SPACEDIM; ++i)
+        {
+            flux[i + 1] = M_half * aF * U_up[i + 1] + p_half * normal[i];
+        }
+
+        // 能量通量
+        flux[SPACEDIM + 1] = M_half * aF * rho_up * H_up;
+    }
+
     void computeRiemannFluxAUSM(const DataType consrv_l[NCONSRV],
                                 const DataType consrv_r[NCONSRV],
                                 DataType flux[NCONSRV], const ConfigNS &config,
                                 DataType normal[SPACEDIM]) const
     {
-        const double gamma = GAMMA;
-        const double gm1 = gamma - 1.0;
+        (void)config;
+        const DataType gamma = GAMMA;
+        const DataType gm1 = gamma - DataType(1.0);
 
-        // --- 1. 恢复原始变量 (Left) ---
-        double rhoL = consrv_l[0];
-        double invRhoL = 1.0 / rhoL;
-        double uL[3] = {0.0, 0.0, 0.0};
-        double u2L = 0.0;
+        // --- 1. 恢复原始变量 ---
+        DataType prim_l[NPRIMTV], prim_r[NPRIMTV];
+        cons2prim(consrv_l, prim_l);
+        cons2prim(consrv_r, prim_r);
+
+        DataType rho_l = prim_l[0];
+        DataType rho_r = prim_r[0];
+        DataType p_l = prim_l[SPACEDIM + 1];
+        DataType p_r = prim_r[SPACEDIM + 1];
+
+        // 法向速度
+        DataType un_l = DataType(0.0), un_r = DataType(0.0);
         for (int i = 0; i < SPACEDIM; ++i)
         {
-            uL[i] = consrv_l[i + 1] * invRhoL;
-            u2L += uL[i] * uL[i];
-        }
-        double eL = consrv_l[NCONSRV - 1] * invRhoL;
-        double pL = gm1 * (eL - 0.5 * u2L) * rhoL;
-        double aL = std::sqrt(gamma * pL * invRhoL);
-
-        // --- 2. 恢复原始变量 (Right) ---
-        double rhoR = consrv_r[0];
-        double invRhoR = 1.0 / rhoR;
-        double uR[3] = {0.0, 0.0, 0.0};
-        double u2R = 0.0;
-        for (int i = 0; i < SPACEDIM; ++i)
-        {
-            uR[i] = consrv_r[i + 1] * invRhoR;
-            u2R += uR[i] * uR[i];
-        }
-        double eR = consrv_r[NCONSRV - 1] * invRhoR;
-        double pR = gm1 * (eR - 0.5 * u2R) * rhoR;
-        double aR = std::sqrt(gamma * pR * invRhoR);
-
-        // --- 3. 法向速度与马赫数 ---
-        double unL = 0.0, unR = 0.0;
-        for (int i = 0; i < SPACEDIM; ++i)
-        {
-            unL += uL[i] * normal[i];
-            unR += uR[i] * normal[i];
+            un_l += prim_l[i + 1] * normal[i];
+            un_r += prim_r[i + 1] * normal[i];
         }
 
-        double ML = unL / aL;
-        double MR = unR / aR;
+        // 声速
+        DataType a_l = std::sqrt(GetSoundSpeed(prim_l));
+        DataType a_r = std::sqrt(GetSoundSpeed(prim_r));
 
-        // --- 4. Splitting Functions ---
-        auto getMPlus = [](double M)
+        // --- 2. 马赫数 ---
+        DataType ML = un_l / a_l;
+        DataType MR = un_r / a_r;
+
+        // --- 3. 分裂函数 (AUSM+ 格式) ---
+        auto MPlus = [](DataType M) -> DataType
         {
-            if (std::abs(M) <= 1.0)
-            {
-                return 0.25 * (M + 1.0) * (M + 1.0) +
-                       0.125 * (M * M - 1.0) * (M * M - 1.0);
-            }
-            return 0.5 * (M + std::abs(M));
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M + DataType(1.0)) *
+                       (M + DataType(1.0));
+            return DataType(0.5) * (M + std::abs(M));
         };
 
-        auto getMMinus = [](double M)
+        auto MMinus = [](DataType M) -> DataType
         {
-            if (std::abs(M) <= 1.0)
-            {
-                return -0.25 * (M - 1.0) * (M - 1.0) -
-                       0.125 * (M * M - 1.0) * (M * M - 1.0);
-            }
-            return 0.5 * (M - std::abs(M));
+            if (std::abs(M) <= DataType(1.0))
+                return -DataType(0.25) * (M - DataType(1.0)) *
+                       (M - DataType(1.0));
+            return DataType(0.5) * (M - std::abs(M));
         };
 
-        auto getPPlus = [](double M)
+        auto PPlus = [](DataType M) -> DataType
         {
-            if (std::abs(M) <= 1.0)
-            {
-                return 0.25 * (M + 1.0) * (M + 1.0) * (2.0 - M) +
-                       0.1875 * M * (M * M - 1.0) * (M * M - 1.0);
-            }
-            return 0.5 * (1.0 + std::copysign(1.0, M));
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M + DataType(1.0)) *
+                       (M + DataType(1.0)) * (DataType(2.0) - M);
+            return DataType(0.5) *
+                   (DataType(1.0) + std::copysign(DataType(1.0), M));
         };
 
-        auto getPMinus = [](double M)
+        auto PMinus = [](DataType M) -> DataType
         {
-            if (std::abs(M) <= 1.0)
-            {
-                return 0.25 * (M - 1.0) * (M - 1.0) * (2.0 + M) -
-                       0.1875 * M * (M * M - 1.0) * (M * M - 1.0);
-            }
-            return 0.5 * (1.0 - std::copysign(1.0, M));
+            if (std::abs(M) <= DataType(1.0))
+                return DataType(0.25) * (M - DataType(1.0)) *
+                       (M - DataType(1.0)) * (DataType(2.0) + M);
+            return DataType(0.5) *
+                   (DataType(1.0) - std::copysign(DataType(1.0), M));
         };
 
-        double Mplus_L = getMPlus(ML);
-        double Mminus_R = getMMinus(MR);
-        double Pplus_L = getPPlus(ML);
-        double Pminus_R = getPMinus(MR);
+        DataType Mplus_L = MPlus(ML);
+        DataType Mminus_R = MMinus(MR);
+        DataType Pplus_L = PPlus(ML);
+        DataType Pminus_R = PMinus(MR);
 
-        // --- 5. Interface Quantities ---
-        double M_half = Mplus_L + Mminus_R;
-        double p_half = Pplus_L * pL + Pminus_R * pR;
-        double a_half = std::min(aL, aR);
+        // --- 4. 界面量 ---
+        DataType M_half = Mplus_L + Mminus_R;
+        DataType p_half = Pplus_L * p_l + Pminus_R * p_r;
 
-        double du_n = unR - unL;
-        double p_diss =
-            -0.25* Pplus_L * Pminus_R * (rhoL + rhoR) * a_half * du_n;
-        double p_final = p_half + p_diss;
+        // --- 5. 上风状态选择 ---
+        const DataType *U_up = (M_half >= DataType(0.0)) ? consrv_l : consrv_r;
+        DataType rho_up = U_up[0];
+        DataType inv_rho_up = DataType(1.0) / rho_up;
 
-        // --- 6. Upwind State Selection ---
-        const DataType *U = (M_half >= 0.0) ? consrv_l : consrv_r;
-        double rho_up = U[0];
-        double invRho_up = 1.0 / rho_up;
-
-        double u2_up = 0.0;
+        // 计算上风状态的总焓
+        DataType u2_up = DataType(0.0);
         for (int i = 0; i < SPACEDIM; ++i)
         {
-            double ui = U[i + 1] * invRho_up;
+            DataType ui = U_up[i + 1] * inv_rho_up;
             u2_up += ui * ui;
         }
-        double e_up = U[NCONSRV - 1] * invRho_up;
-        double p_up = gm1 * (e_up - 0.5 * u2_up) * rho_up;
-        double H_up = e_up + p_up * invRho_up; // Total Enthalpy
-        double rhoH_up = rho_up * H_up;
+        DataType E_up = U_up[SPACEDIM + 1];
+        DataType p_up = gm1 * (E_up - DataType(0.5) * rho_up * u2_up);
+        DataType H_up = (E_up + p_up) * inv_rho_up;
 
-        double Ma = M_half * a_half;
+        DataType a_up = (M_half >= DataType(0.0)) ? a_l : a_r;
 
-        // --- 7. Compute Flux ---
-        flux[0] = Ma * rho_up; // Mass
+        // --- 6. 计算通量 ---
+        // 质量通量
+        flux[0] = M_half * a_up * rho_up;
 
+        // 动量通量
         for (int i = 0; i < SPACEDIM; ++i)
         {
-            flux[i + 1] = Ma * U[i + 1] + p_final * normal[i]; // Momentum
+            flux[i + 1] = M_half * a_up * U_up[i + 1] + p_half * normal[i];
         }
 
-        flux[NCONSRV - 1] = Ma * rhoH_up; // Energy
+        // 能量通量
+        flux[SPACEDIM + 1] = M_half * a_up * rho_up * H_up;
     }
 
     void computeRiemannFluxROE(const DataType consrv_l[NCONSRV],
@@ -721,6 +981,12 @@ class PhysicsNS : public PhysicsModel<ConfigNS>
             DataType normal_1d[SPACEDIM];
             normal_1d[0] = normal;
             computeRiemannFluxAUSM(uL, uR, flux, config, normal_1d);
+        }
+        else if (config.common_flux_type == CommonFluxType::AUSM_PLUS_UP)
+        {
+            DataType normal_1d[SPACEDIM];
+            normal_1d[0] = normal;
+            computeRiemannFluxAUSMPLUSUP(uL, uR, flux, config, normal_1d);
         }
     }
 

@@ -17,7 +17,8 @@ enum class CommonFluxType
     HLL = 1,
     HLLC = 2,
     ROE = 3,
-    AUSM = 4
+    AUSM = 4,
+    AUSM_PLUS_UP = 5,
 };
 
 /**
