@@ -13,21 +13,21 @@ struct adl_serializer<ConfigBase>
     static void to_json(ordered_json &j, const ConfigBase &c)
     {
         j = ordered_json{{"x0", c.x0},
-                 {"x1", c.x1},
-                 {"n_ele", c.n_ele},
-                 {"total_time", c.total_time},
-                 {"output_time_step", c.output_time_step},
-                 {"cfl", c.cfl},
-                 {"dt", c.dt},
-                 {"output_dir", c.output_dir},
-                 {"limiter_type", c.limiter_type},
-                 {"dg_fr_type", c.dg_fr_type},
-                 {"enable_entropy_modify", c.enable_entropy_modify},
-                 {"weight", c.weight},
-                 {"time_scheme_type", c.time_scheme_type},
-                 {"bc_type", c.bc_type},
-                 {"bc_left", c.bc_left},
-                 {"bc_right", c.bc_right}};
+                         {"x1", c.x1},
+                         {"n_ele", c.n_ele},
+                         {"total_time", c.total_time},
+                         {"output_time_step", c.output_time_step},
+                         {"cfl", c.cfl},
+                         {"dt", c.dt},
+                         {"output_dir", c.output_dir},
+                         {"limiter_type", c.limiter_type},
+                         {"dg_fr_type", c.dg_fr_type},
+                         {"enable_entropy_modify", c.enable_entropy_modify},
+                         {"weight", c.weight},
+                         {"time_scheme_type", c.time_scheme_type},
+                         {"bc_type", c.bc_type},
+                         {"bc_left", c.bc_left},
+                         {"bc_right", c.bc_right}};
     }
     static void from_json(const ordered_json &j, ConfigBase &c)
     {
@@ -118,7 +118,8 @@ struct adl_serializer<ConfigLAD>
 {
     static void to_json(ordered_json &j, const ConfigLAD &c)
     {
-         adl_serializer<ConfigBase>::to_json(j,static_cast<const ConfigBase&>(c));
+        adl_serializer<ConfigBase>::to_json(j,
+                                            static_cast<const ConfigBase &>(c));
         j["a"] = c.a;
         j["nu"] = c.nu;
         j["vis_scheme_type"] = c.vis_scheme_type;
@@ -126,7 +127,7 @@ struct adl_serializer<ConfigLAD>
     }
     static void from_json(const ordered_json &j, ConfigLAD &c)
     {
-        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase&>(c));
+        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase &>(c));
         j.at("a").get_to(c.a);
 
         auto it = j.find("nu");
@@ -159,11 +160,12 @@ struct adl_serializer<ConfigBurgers>
 {
     static void to_json(ordered_json &j, const ConfigBurgers &c)
     {
-         adl_serializer<ConfigBase>::to_json(j,static_cast<const ConfigBase&>(c));
+        adl_serializer<ConfigBase>::to_json(j,
+                                            static_cast<const ConfigBase &>(c));
     }
     static void from_json(const ordered_json &j, ConfigBurgers &c)
     {
-        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase&>(c));
+        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase &>(c));
     }
 };
 
@@ -173,11 +175,22 @@ struct adl_serializer<ConfigNS>
 {
     static void to_json(ordered_json &j, const ConfigNS &c)
     {
-         adl_serializer<ConfigBase>::to_json(j,static_cast<const ConfigBase&>(c));
+        adl_serializer<ConfigBase>::to_json(j,
+                                            static_cast<const ConfigBase &>(c));
+        j["common_flux_type"] = c.common_flux_type;
     }
     static void from_json(const ordered_json &j, ConfigNS &c)
     {
-        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase&>(c));
+        adl_serializer<ConfigBase>::from_json(j, static_cast<ConfigBase &>(c));
+        auto it = j.find("common_flux_type");
+        if (it != j.end())
+        {
+            it->get_to(c.common_flux_type);
+        }
+        else
+        {
+            c.common_flux_type = CommonFluxType::HLL;
+        }
     }
 };
 
