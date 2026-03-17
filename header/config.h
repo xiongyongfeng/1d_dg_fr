@@ -7,7 +7,8 @@
 enum class BcType
 {
     Periodic = 0,
-    Dirichlet = 1
+    Dirichlet = 1,
+    Symmetry = 2
 };
 
 /**
@@ -37,7 +38,7 @@ struct ConfigBase
     int time_scheme_type = 0;          // 0 for tvd-rk3, 1 for new time scheme
 
     // 边界条件参数
-    int bc_type = 0;                   // 0 for periodic, 1 for dirichlet
+    BcType bc_type = BcType::Periodic;                   
     DataType bc_left = 0.0;            // Dirichlet边界条件: 左边界值
     DataType bc_right = 0.0;           // Dirichlet边界条件: 右边界值
 };

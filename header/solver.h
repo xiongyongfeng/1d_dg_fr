@@ -87,5 +87,5 @@ public:
 
     // 边界条件处理: 获取边界处的虚拟守恒变量和梯度
     // bc_pos: -1 表示左边界, +1 表示右边界
-    void getBoundaryState(int bc_pos, DataType u_bc[NCONSRV], DataType u_grad_bc[NCONSRV]) const;
+    void getBoundaryState(int bc_pos, DataType u_bc[NCONSRV], DataType u_grad_bc[NCONSRV],const Element *elem_pool) const;
 };

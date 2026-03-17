@@ -87,7 +87,7 @@ struct adl_serializer<ConfigBase>
         }
         else
         {
-            c.bc_type = 0;
+            c.bc_type = BcType::Periodic;
         }
 
         it = j.find("bc_left");
