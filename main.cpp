@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 
     // 使用模板化的loadConfig函数加载对应类型的配置
     ConfigType config = nlohmann::loadConfig<ConfigType>(argv[1]);
-    nlohmann::json j = config; // 自动序列化
+    nlohmann::ordered_json j = config; // 先转json再转ordered_json保持顺序
     std::cout << j.dump(4);    // 缩进4格输出，便于阅读
 
     ensurePathExists(config.output_dir);
