@@ -564,45 +564,156 @@ std::pair<DataType, int> Solver<ConfigType>::Minmod(DataType a, DataType b,
 template <typename ConfigType>
 void Solver<ConfigType>::TvdLimiter()
 {
-    bool islimited[config.n_ele];
-    DataType c1[config.n_ele][NCONSRV];
+    // Moment limiter for DG (supports P1 and P2)
+    // Based on Cockburn & Shu's approach: limit from highest moment downward
 
     for (int iele = 0; iele < config.n_ele; iele++)
     {
-        Element &element = elem_pool_old[TORDER][iele];
-        DataType hj = geom_pool[iele].x[1] - geom_pool[iele].x[0];
-        Element &element_l =
+        Element &elem = elem_pool_old[TORDER][iele];
+        Element &elem_L =
             elem_pool_old[TORDER][(iele - 1 + config.n_ele) % config.n_ele];
-        Element &element_r =
+        Element &elem_R =
             elem_pool_old[TORDER][(iele + 1 + config.n_ele) % config.n_ele];
 
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
-            std::pair<DataType, int> c1p =
-                Minmod(element.u_consrv[1][ivar] - element.u_avg[ivar],
-                       element_r.u_avg[ivar] - element.u_avg[ivar],
-                       element.u_avg[ivar] - element_l.u_avg[ivar]);
-            std::pair<DataType, int> c1m =
-                Minmod(-element.u_consrv[0][ivar] + element.u_avg[ivar],
-                       element_r.u_avg[ivar] - element.u_avg[ivar],
-                       element.u_avg[ivar] - element_l.u_avg[ivar]);
-            c1[iele][ivar] = DataType(0.5) * (c1p.first + c1m.first);
-            element.islimited[ivar] = c1p.second + c1m.second;
-        }
-    }
+            DataType u_avg = elem.u_avg[ivar];
+            DataType u_avg_L = elem_L.u_avg[ivar];
+            DataType u_avg_R = elem_R.u_avg[ivar];
 
-    for (int iele = 0; iele < config.n_ele; iele++)
-    {
-        Element &element = elem_pool_old[TORDER][iele];
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            // Reference gradients from neighboring cells
+            DataType du_R = u_avg_R - u_avg;
+            DataType du_L = u_avg - u_avg_L;
+
+            // --- Compute moment coefficients using Legendre basis ---
+            // u(ξ) = u_0 * L_0 + u_1 * L_1 + u_2 * L_2 + ...
+            // L_0 = 1, L_1 = ξ, L_2 = (3ξ² - 1)/2
+
+            DataType u_0 = u_avg;  // Zeroth moment = cell average
+            DataType u_1 = DataType(0);
+            DataType u_2 = DataType(0);
+
+            // For P1: u[0] = u_0 - u_1, u[1] = u_0 + u_1
+            // So: u_1 = (u[1] - u[0]) / 2
+            // For P2: Use L2 projection with proper normalization
+
+            if constexpr (ORDER == 1)
             {
-                if (element.islimited[ivar] > 0)
+                // Direct calculation for P1 (more accurate)
+                u_1 = DataType(0.5) * (elem.u_consrv[1][ivar] - elem.u_consrv[0][ivar]);
+            }
+            else if constexpr (ORDER >= 2)
+            {
+                // Compute moments via L2 projection for P2+
+                // u_k = (2k+1)/2 * ∫u*L_k dξ
+                for (int isp = 0; isp < NSP; isp++)
                 {
-                    element.u_consrv[isp][ivar] =
-                        element.u_avg[ivar] +
-                        c1[iele][ivar] * getLGLPoints<DataType, ORDER>()[isp];
+                    DataType xi = getLGLPoints<DataType, ORDER>()[isp];
+                    DataType w = getLGLWeights<DataType, ORDER>()[isp];
+                    DataType u_val = elem.u_consrv[isp][ivar];
+
+                    // L_1(ξ) = ξ
+                    u_1 += w * u_val * xi;
+
+                    // L_2(ξ) = (3ξ² - 1)/2
+                    DataType L2 = DataType(0.5) * (DataType(3) * xi * xi - DataType(1));
+                    u_2 += w * u_val * L2;
+                }
+                // Normalization: ∫L_1² = 2/3, ∫L_2² = 2/5
+                u_1 *= DataType(1.5);  // 1 / (2/3) = 3/2
+                u_2 *= DataType(2.5);  // 1 / (2/5) = 5/2
+            }
+
+            bool limited = false;
+
+            // --- Step 1: Limit second moment (for P2) ---
+            if constexpr (ORDER >= 2)
+            {
+                // Second moment limiter based on second differences
+                // Reference: Use neighboring cell averages to estimate curvature
+                DataType d2u_center = u_avg_L - DataType(2) * u_avg + u_avg_R;
+
+                // Get second moments of neighbors for comparison
+                DataType u_2_L = DataType(0), u_2_R = DataType(0);
+                for (int isp = 0; isp < NSP; isp++)
+                {
+                    DataType xi = getLGLPoints<DataType, ORDER>()[isp];
+                    DataType w = getLGLWeights<DataType, ORDER>()[isp];
+                    DataType L2 = DataType(0.5) * (DataType(3) * xi * xi - DataType(1));
+
+                    u_2_L += w * elem_L.u_consrv[isp][ivar] * L2;
+                    u_2_R += w * elem_R.u_consrv[isp][ivar] * L2;
+                }
+                u_2_L *= DataType(2.5);
+                u_2_R *= DataType(2.5);
+
+                // TVD condition: limit u_2 if signs disagree or magnitude too large
+                auto [u_2_lim, lim2] = Minmod(u_2, u_2_L, u_2_R);
+
+                if (lim2 > 0)
+                {
+                    u_2 = u_2_lim;
+                    limited = true;
+                }
+            }
+
+            // --- Step 2: Limit first moment (always check for P2, or primary for P1) ---
+            {
+                // Check if reconstructed values at boundaries create new extrema
+                // u(-1) = u_0 - u_1 + u_2, u(1) = u_0 + u_1 + u_2
+                DataType u_left, u_right;
+                if constexpr (ORDER >= 2)
+                {
+                    u_left = u_0 - u_1 + u_2;
+                    u_right = u_0 + u_1 + u_2;
+                }
+                else
+                {
+                    u_left = u_0 - u_1;
+                    u_right = u_0 + u_1;
+                }
+
+                // Check if boundary values are within [min, max] of neighbors
+                DataType u_min = std::min({u_avg_L, u_avg, u_avg_R});
+                DataType u_max = std::max({u_avg_L, u_avg, u_avg_R});
+
+                bool needs_limiting = (u_left < u_min || u_left > u_max ||
+                                       u_right < u_min || u_right > u_max);
+
+                if (needs_limiting || (ORDER < 2))
+                {
+                    auto [u_1_lim, lim1] = Minmod(u_1, du_R, du_L);
+                    if (lim1 > 0)
+                    {
+                        u_1 = u_1_lim;
+                        limited = true;
+
+                        // For P2, if first moment is limited, also zero second moment
+                        if constexpr (ORDER >= 2)
+                        {
+                            u_2 = DataType(0);
+                        }
+                    }
+                }
+            }
+
+            elem.islimited[ivar] = limited ? 1 : 0;
+
+            // --- Reconstruct solution ---
+            if (limited)
+            {
+                for (int isp = 0; isp < NSP; isp++)
+                {
+                    DataType xi = getLGLPoints<DataType, ORDER>()[isp];
+                    DataType u_new = u_0 + u_1 * xi;
+
+                    if constexpr (ORDER >= 2)
+                    {
+                        DataType L2 = DataType(0.5) * (DataType(3) * xi * xi - DataType(1));
+                        u_new += u_2 * L2;
+                    }
+
+                    elem.u_consrv[isp][ivar] = u_new;
                 }
             }
         }
