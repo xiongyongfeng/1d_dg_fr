@@ -8,12 +8,12 @@
  * @brief 一维Euler方程 (Navier-Stokes 无粘项)
  * [rho, rho*u, rho*E]_t + [rho*u, rho*u^2+p, (rho*E+p)*u]_x = 0
  */
-class PhysicsNS : public PhysicsModel
+class PhysicsNS : public PhysicsModel<ConfigNS>
 {
   public:
     // 单点通量计算
     void computeFlux(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                     const Config &config) const override
+                     const ConfigNS &config) const override
     {
         (void)config;
         DataType prim[NPRIMTV];
@@ -24,7 +24,7 @@ class PhysicsNS : public PhysicsModel
     }
 
     void computeFluxNormal(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                           const Config &config, DataType normal) const override
+                           const ConfigNS &config, DataType normal) const override
     {
         (void)config;
         DataType prim[NPRIMTV];
@@ -37,7 +37,7 @@ class PhysicsNS : public PhysicsModel
 
     void computeRiemannFlux(const DataType uL[NCONSRV],
                             const DataType uR[NCONSRV], DataType flux[NCONSRV],
-                            const Config &config,
+                            const ConfigNS &config,
                             DataType normal) const override
     {
         (void)config;
@@ -97,7 +97,7 @@ class PhysicsNS : public PhysicsModel
     }
 
     void setInitialCondition(DataType u[NSP][NCONSRV], const DataType x[NSP],
-                             const Config &config) const override
+                             const ConfigNS &config) const override
     {
         (void)config;
         DataType consrv_left[NCONSRV];
@@ -144,7 +144,7 @@ class PhysicsNS : public PhysicsModel
                                const DataType consrv[NSP][NCONSRV],
                                const DataType local_det_jac,
                                DataType rhs_predict[NSP][NCONSRV],
-                               const Config &config) const override
+                               const ConfigNS &config) const override
     {
         (void)config;
         (void)flux;
@@ -249,3 +249,9 @@ class PhysicsNS : public PhysicsModel
         return GAMMA * prim[2] / prim[0];
     }
 };
+
+// 工厂函数实现
+inline std::unique_ptr<PhysicsModel<ConfigNS>> createPhysicsModelNS()
+{
+    return std::make_unique<PhysicsNS>();
+}

@@ -8,12 +8,12 @@
  * @brief Burgers 方程
  * u_t + (0.5 * u^2)_x = 0
  */
-class PhysicsBurgers : public PhysicsModel
+class PhysicsBurgers : public PhysicsModel<ConfigBurgers>
 {
   public:
     // 单点通量计算
     void computeFlux(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                     const Config &config) const override
+                     const ConfigBurgers &config) const override
     {
         (void)config;
         for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -23,7 +23,7 @@ class PhysicsBurgers : public PhysicsModel
     }
 
     void computeFluxNormal(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                           const Config &config, DataType normal) const override
+                           const ConfigBurgers &config, DataType normal) const override
     {
         (void)config;
         for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -34,7 +34,7 @@ class PhysicsBurgers : public PhysicsModel
 
     void computeRiemannFlux(const DataType uL[NCONSRV],
                             const DataType uR[NCONSRV], DataType flux[NCONSRV],
-                            const Config &config,
+                            const ConfigBurgers &config,
                             DataType normal) const override
     {
         (void)config;
@@ -62,7 +62,7 @@ class PhysicsBurgers : public PhysicsModel
     }
 
     void setInitialCondition(DataType u[NSP][NCONSRV], const DataType x[NSP],
-                             const Config &config) const override
+                             const ConfigBurgers &config) const override
     {
         (void)config;
         for (int isp = 0; isp < NSP; isp++)
@@ -82,7 +82,7 @@ class PhysicsBurgers : public PhysicsModel
                                const DataType consrv[NSP][NCONSRV],
                                const DataType local_det_jac,
                                DataType rhs_predict[NSP][NCONSRV],
-                               const Config &config) const override
+                               const ConfigBurgers &config) const override
     {
         (void)config;
         (void)flux;
@@ -134,3 +134,9 @@ class PhysicsBurgers : public PhysicsModel
         }
     }
 };
+
+// 工厂函数实现
+inline std::unique_ptr<PhysicsModel<ConfigBurgers>> createPhysicsModelBurgers()
+{
+    return std::make_unique<PhysicsBurgers>();
+}

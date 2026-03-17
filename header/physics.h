@@ -6,14 +6,17 @@
 #include <string>
 
 /**
- * @brief 物理模型抽象基类
+ * @brief 物理模型抽象基类（模板）
  *
  * 所有方程（LAD、Burgers、NS等）都需要实现以下接口：
  * - 通量计算
  * - Riemann通量计算
  * - 原始变量与守恒变量转换
  * - 初始条件设置
+ *
+ * @tparam ConfigType 配置类型（ConfigLAD, ConfigBurgers, ConfigNS等）
  */
+template <typename ConfigType>
 class PhysicsModel
 {
   public:
@@ -21,16 +24,16 @@ class PhysicsModel
 
     // 通量计算: F = f(u) - 单点输入
     virtual void computeFlux(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                             const Config &config) const = 0;
+                             const ConfigType &config) const = 0;
     virtual void computeFluxNormal(const DataType u[NCONSRV],
-                                   DataType flux[NCONSRV], const Config &config,
+                                   DataType flux[NCONSRV], const ConfigType &config,
                                    DataType normal) const = 0;
 
     // Riemann通量计算 (界面通量)
     virtual void computeRiemannFlux(const DataType uL[NCONSRV],
                                     const DataType uR[NCONSRV],
                                     DataType flux[NCONSRV],
-                                    const Config &config,
+                                    const ConfigType &config,
                                     DataType normal) const = 0;
 
     // 原始变量 -> 守恒变量
@@ -44,7 +47,7 @@ class PhysicsModel
     // 设置初始条件 - 多点
     virtual void setInitialCondition(DataType u[NSP][NCONSRV],
                                      const DataType x[NSP],
-                                     const Config &config) const = 0;
+                                     const ConfigType &config) const = 0;
 
     // 模型名称
     virtual std::string name() const = 0;
@@ -56,7 +59,7 @@ class PhysicsModel
     virtual void computeVisFlux(const DataType u[NCONSRV],
                                 const DataType u_grad[NCONSRV],
                                 DataType flux[NCONSRV],
-                                const Config &config) const
+                                const ConfigType &config) const
     {
         (void)u;
         (void)u_grad;
@@ -69,7 +72,7 @@ class PhysicsModel
         const DataType uL[NCONSRV], const DataType uL_grad[NCONSRV],
         const DataType uR[NCONSRV], const DataType uR_grad[NCONSRV],
         const DataType &length_scale, DataType flux[NCONSRV],
-        const Config &config, DataType normal) const
+        const ConfigType &config, DataType normal) const
     {
         (void)uL;
         (void)uL_grad;
@@ -86,7 +89,7 @@ class PhysicsModel
                    DataType local_det_jac_L, DataType local_det_jac_R,
                    DataType flux[NCONSRV], DataType globalLift_L[NSP * NCONSRV],
                    DataType globalLift_R[NSP * NCONSRV],
-                   const Config &config) const
+                   const ConfigType &config) const
     {
         (void)uL;
         (void)uL_grad;
@@ -105,7 +108,7 @@ class PhysicsModel
                                        const DataType consrv[NSP][NCONSRV],
                                        const DataType local_det_jac,
                                        DataType rhs_predict[NSP][NCONSRV],
-                                       const Config &config) const
+                                       const ConfigType &config) const
     {
         (void)flux;
         (void)consrv;
@@ -134,5 +137,8 @@ class PhysicsModel
     }
 };
 
-// 工厂函数：根据宏定义创建物理模型
-std::unique_ptr<PhysicsModel> createPhysicsModel();
+// 工厂函数声明：根据宏定义创建物理模型
+// 这些函数在各自的physics_*.h文件中实现
+std::unique_ptr<PhysicsModel<ConfigLAD>> createPhysicsModelLAD();
+std::unique_ptr<PhysicsModel<ConfigBurgers>> createPhysicsModelBurgers();
+std::unique_ptr<PhysicsModel<ConfigNS>> createPhysicsModelNS();

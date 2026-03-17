@@ -5,6 +5,12 @@
 #include "physics.h"
 #include <memory>
 
+/**
+ * @brief 求解器模板类
+ *
+ * @tparam ConfigType 配置类型（ConfigLAD, ConfigBurgers, ConfigNS等）
+ */
+template <typename ConfigType>
 class Solver
 {
 private:
@@ -12,11 +18,11 @@ private:
     Element **elem_pool_old;
     Element **elem_pool_tmp;
     Rhs **rhs_pool_tmp;
-    Config config;
-    std::unique_ptr<PhysicsModel> physics;
+    ConfigType config;
+    std::unique_ptr<PhysicsModel<ConfigType>> physics;
 
 public:
-    Solver(const Config& config, int nelem);
+    Solver(const ConfigType& config, int nelem);
 
     ~Solver();
 
@@ -55,7 +61,7 @@ public:
     void compGradAndAvg();
 
     // 获取物理模型指针
-    PhysicsModel* getPhysics() const { return physics.get(); }
+    PhysicsModel<ConfigType>* getPhysics() const { return physics.get(); }
 
     // 获取几何数据池
     Geom* getGeomPool() const { return geom_pool; }
@@ -76,8 +82,8 @@ public:
     void computeCflDt();
 
     // 获取Config引用
-    Config& getConfig() { return config; }
-    const Config& getConfig() const { return config; }
+    ConfigType& getConfig() { return config; }
+    const ConfigType& getConfig() const { return config; }
 
     // 边界条件处理: 获取边界处的虚拟守恒变量和梯度
     // bc_pos: -1 表示左边界, +1 表示右边界

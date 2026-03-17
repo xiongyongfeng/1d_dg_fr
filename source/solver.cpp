@@ -2,6 +2,9 @@
 #include "constants.h"
 #include "element.h"
 #include "macro.h"
+#include "physics_lad.h"
+#include "physics_burgers.h"
+#include "physics_ns.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -9,9 +12,24 @@
 #include <iostream>
 #include <valarray>
 
-Solver::Solver(const Config &config, int nelem) : config(config)
+// 模板实现
+
+template <typename ConfigType>
+Solver<ConfigType>::Solver(const ConfigType &config, int nelem) : config(config)
 {
-    this->physics = createPhysicsModel();
+    // 根据ConfigType创建对应的物理模型
+    if constexpr (std::is_same_v<ConfigType, ConfigLAD>)
+    {
+        physics = createPhysicsModelLAD();
+    }
+    else if constexpr (std::is_same_v<ConfigType, ConfigBurgers>)
+    {
+        physics = createPhysicsModelBurgers();
+    }
+    else if constexpr (std::is_same_v<ConfigType, ConfigNS>)
+    {
+        physics = createPhysicsModelNS();
+    }
 
     this->elem_pool_old = new Element *[NTP];
     this->elem_pool_tmp = new Element *[NTP];
@@ -30,7 +48,8 @@ Solver::Solver(const Config &config, int nelem) : config(config)
     }
 }
 
-Solver::~Solver()
+template <typename ConfigType>
+Solver<ConfigType>::~Solver()
 {
     delete[] elem_pool_old[0];
     delete[] elem_pool_tmp[0];
@@ -42,7 +61,8 @@ Solver::~Solver()
     delete[] geom_pool;
 }
 
-void Solver::Initialization()
+template <typename ConfigType>
+void Solver<ConfigType>::Initialization()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -72,7 +92,8 @@ void Solver::Initialization()
     }
 }
 
-void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
+template <typename ConfigType>
+void Solver<ConfigType>::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
     DataType length_scale = geom_pool[iele].dx; // 计算特征长度尺度
@@ -156,174 +177,188 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
     }
 
     // 扩散项 (如果有)
-    if (physics->hasDiffusion() && config.vis_scheme_type == 0)
+    if (physics->hasDiffusion())
     {
-        DataType visflux_tmp[NSP][NCONSRV]{};
-        DataType rhs_common_visflux_left[NCONSRV];
-        DataType rhs_common_visflux_right[NCONSRV];
-        DataType globalLift[NSP * NCONSRV] = {0.0};
-        DataType globalLift_L[NSP * NCONSRV];
-        DataType globalLift_R[NSP * NCONSRV];
-
-        physics->computeBR2Flux(
-            element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
-            element.u_consrv[0], element.u_grad_consrv[0], local_det_jac_L,
-            local_det_jac, rhs_common_visflux_left, globalLift_L, globalLift,
-            config);
-        physics->computeBR2Flux(
-            element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
-            element_r.u_consrv[0], element_r.u_grad_consrv[0], local_det_jac,
-            local_det_jac_R, rhs_common_visflux_right, globalLift, globalLift_R,
-            config);
-
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
+        // 检查ConfigType是否有vis_scheme_type成员（仅ConfigLAD有）
+        int vis_scheme_type = 1; // 默认值
+        if constexpr (std::is_same_v<ConfigType, ConfigLAD>)
         {
-            rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
-            rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
+            vis_scheme_type = config.vis_scheme_type;
         }
 
-        // 计算修正后的梯度
-        DataType grad_u_consrv_[NSP][NCONSRV];
-        for (int isp = 0; isp < NSP; isp++)
+        if (vis_scheme_type == 0)
         {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar] -
-                                            globalLift[isp * NCONSRV + ivar];
-            }
-        }
+            DataType visflux_tmp[NSP][NCONSRV]{};
+            DataType rhs_common_visflux_left[NCONSRV];
+            DataType rhs_common_visflux_right[NCONSRV];
+            DataType globalLift[NSP * NCONSRV] = {0.0};
+            DataType globalLift_L[NSP * NCONSRV];
+            DataType globalLift_R[NSP * NCONSRV];
 
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            physics->computeVisFlux(element.u_consrv[isp], grad_u_consrv_[isp],
-                                    visflux_tmp[isp], config);
-        }
-
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                for (int jsp = 0; jsp < NSP; jsp++)
-                {
-                    rhs_tmp[isp][ivar] -=
-                        getSMatrix<DataType, ORDER>()[jsp][isp] *
-                        visflux_tmp[jsp][ivar];
-                }
-            }
-        }
-    }
-    else if (physics->hasDiffusion() && config.vis_scheme_type == 1)
-    {
-        // 处理其他粘性方案
-        DataType visflux_tmp[NSP][NCONSRV]{};
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            physics->computeVisFlux(element.u_consrv[isp],
-                                    element.u_grad_consrv[isp],
-                                    visflux_tmp[isp], config);
-        }
-
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
-            {
-                for (int jsp = 0; jsp < NSP; jsp++)
-                {
-                    rhs_tmp[isp][ivar] -=
-                        getSMatrix<DataType, ORDER>()[jsp][isp] *
-                        visflux_tmp[jsp][ivar];
-                }
-            }
-        }
-
-        DataType left_bc_u_out[NCONSRV];
-        DataType left_bc_u_in[NCONSRV];
-        DataType right_bc_u_out[NCONSRV];
-        DataType right_bc_u_in[NCONSRV];
-        for (size_t i = 0; i < NCONSRV; i++)
-        {
-            right_bc_u_out[i] = element_r.u_consrv[0][i];
-            right_bc_u_in[i] = element.u_consrv[ORDER][i];
-            left_bc_u_out[i] = element_l.u_consrv[ORDER][i];
-            left_bc_u_in[i] = element.u_consrv[0][i];
-        }
-
-        // 粘性界面通量 - 左边界
-        DataType rhs_vis_common_flux_left[NCONSRV];
-
-        if (iele == 0 && config.bc_type != 0)
-        {
-            // Dirichlet边界
-            physics->computeVisRiemannFlux(
-                element.u_consrv[0], element.u_grad_consrv[0], uL_bc,
-                uL_grad_bc, length_scale, rhs_vis_common_flux_left, config,
-                -1.0);
-            for (size_t i = 0; i < NCONSRV; i++)
-            {
-                left_bc_u_out[i] = uL_bc[i];
-            }
-        }
-        else
-        {
-            physics->computeVisRiemannFlux(
-
-                element.u_consrv[0], element.u_grad_consrv[0],
+            physics->computeBR2Flux(
                 element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
-                length_scale, rhs_vis_common_flux_left, config, -1.0);
+                element.u_consrv[0], element.u_grad_consrv[0], local_det_jac_L,
+                local_det_jac, rhs_common_visflux_left, globalLift_L, globalLift,
+                config);
+            physics->computeBR2Flux(
+                element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                element_r.u_consrv[0], element_r.u_grad_consrv[0], local_det_jac,
+                local_det_jac_R, rhs_common_visflux_right, globalLift, globalLift_R,
+                config);
+
+            for (int ivar = 0; ivar < NCONSRV; ivar++)
+            {
+                rhs_tmp[0][ivar] -= rhs_common_visflux_left[ivar];
+                rhs_tmp[ORDER][ivar] += rhs_common_visflux_right[ivar];
+            }
+
+            // 计算修正后的梯度
+            DataType grad_u_consrv_[NSP][NCONSRV];
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                for (int ivar = 0; ivar < NCONSRV; ivar++)
+                {
+                    grad_u_consrv_[isp][ivar] = element.u_grad_consrv[isp][ivar] -
+                                                globalLift[isp * NCONSRV + ivar];
+                }
+            }
+
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                physics->computeVisFlux(element.u_consrv[isp], grad_u_consrv_[isp],
+                                        visflux_tmp[isp], config);
+            }
+
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                for (int ivar = 0; ivar < NCONSRV; ivar++)
+                {
+                    for (int jsp = 0; jsp < NSP; jsp++)
+                    {
+                        rhs_tmp[isp][ivar] -=
+                            getSMatrix<DataType, ORDER>()[jsp][isp] *
+                            visflux_tmp[jsp][ivar];
+                    }
+                }
+            }
         }
-
-        // 粘性界面通量 - 右边界
-        DataType rhs_vis_common_flux_right[NCONSRV];
-
-        if (iele == config.n_ele - 1 && config.bc_type != 0)
+        else if (vis_scheme_type == 1)
         {
-            // Dirichlet边界
-            physics->computeVisRiemannFlux(
-                element.u_consrv[ORDER], element.u_grad_consrv[ORDER], uR_bc,
-                uR_grad_bc, length_scale, rhs_vis_common_flux_right, config,
-                1.0);
+            // 处理其他粘性方案
+            DataType visflux_tmp[NSP][NCONSRV]{};
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                physics->computeVisFlux(element.u_consrv[isp],
+                                        element.u_grad_consrv[isp],
+                                        visflux_tmp[isp], config);
+            }
+
+            for (int isp = 0; isp < NSP; isp++)
+            {
+                for (int ivar = 0; ivar < NCONSRV; ivar++)
+                {
+                    for (int jsp = 0; jsp < NSP; jsp++)
+                    {
+                        rhs_tmp[isp][ivar] -=
+                            getSMatrix<DataType, ORDER>()[jsp][isp] *
+                            visflux_tmp[jsp][ivar];
+                    }
+                }
+            }
+
+            DataType left_bc_u_out[NCONSRV];
+            DataType left_bc_u_in[NCONSRV];
+            DataType right_bc_u_out[NCONSRV];
+            DataType right_bc_u_in[NCONSRV];
             for (size_t i = 0; i < NCONSRV; i++)
             {
-                right_bc_u_out[i] = uR_bc[i];
+                right_bc_u_out[i] = element_r.u_consrv[0][i];
+                right_bc_u_in[i] = element.u_consrv[ORDER][i];
+                left_bc_u_out[i] = element_l.u_consrv[ORDER][i];
+                left_bc_u_in[i] = element.u_consrv[0][i];
             }
-        }
-        else
-        {
-            physics->computeVisRiemannFlux(
-                element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
-                element_r.u_consrv[0], element_r.u_grad_consrv[0], length_scale,
-                rhs_vis_common_flux_right, config, 1.0);
-        }
 
-        for (int ivar = 0; ivar < NCONSRV; ivar++)
-        {
-            rhs_tmp[0][ivar] += rhs_vis_common_flux_left[ivar];
-            rhs_tmp[ORDER][ivar] += rhs_vis_common_flux_right[ivar];
-        }
+            // 粘性界面通量 - 左边界
+            DataType rhs_vis_common_flux_left[NCONSRV];
 
-        DataType rhs_nipg_left[NSP][NCONSRV];
-        DataType rhs_nipg_right[NSP][NCONSRV];
-        DataType beta = DataType(-1.0);
-        for (int isp = 0; isp < NSP; isp++)
-        {
+            if (iele == 0 && config.bc_type != 0)
+            {
+                // Dirichlet边界
+                physics->computeVisRiemannFlux(
+                    element.u_consrv[0], element.u_grad_consrv[0], uL_bc,
+                    uL_grad_bc, length_scale, rhs_vis_common_flux_left, config,
+                    -1.0);
+                for (size_t i = 0; i < NCONSRV; i++)
+                {
+                    left_bc_u_out[i] = uL_bc[i];
+                }
+            }
+            else
+            {
+                physics->computeVisRiemannFlux(
+
+                    element.u_consrv[0], element.u_grad_consrv[0],
+                    element_l.u_consrv[ORDER], element_l.u_grad_consrv[ORDER],
+                    length_scale, rhs_vis_common_flux_left, config, -1.0);
+            }
+
+            // 粘性界面通量 - 右边界
+            DataType rhs_vis_common_flux_right[NCONSRV];
+
+            if (iele == config.n_ele - 1 && config.bc_type != 0)
+            {
+                // Dirichlet边界
+                physics->computeVisRiemannFlux(
+                    element.u_consrv[ORDER], element.u_grad_consrv[ORDER], uR_bc,
+                    uR_grad_bc, length_scale, rhs_vis_common_flux_right, config,
+                    1.0);
+                for (size_t i = 0; i < NCONSRV; i++)
+                {
+                    right_bc_u_out[i] = uR_bc[i];
+                }
+            }
+            else
+            {
+                physics->computeVisRiemannFlux(
+                    element.u_consrv[ORDER], element.u_grad_consrv[ORDER],
+                    element_r.u_consrv[0], element_r.u_grad_consrv[0], length_scale,
+                    rhs_vis_common_flux_right, config, 1.0);
+            }
+
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                rhs_nipg_right[isp][ivar] =
-                    DataType(0.5) * beta * config.nu *
-                    (right_bc_u_in[ivar] - right_bc_u_out[ivar]) *
-                    getDMatrix<DataType, ORDER>()[ORDER][isp] / local_det_jac;
-                rhs_nipg_left[isp][ivar] =
-                    -DataType(0.5) * beta * config.nu *
-                    (left_bc_u_in[ivar] - left_bc_u_out[ivar]) *
-                    getDMatrix<DataType, ORDER>()[0][isp] / local_det_jac;
+                rhs_tmp[0][ivar] += rhs_vis_common_flux_left[ivar];
+                rhs_tmp[ORDER][ivar] += rhs_vis_common_flux_right[ivar];
             }
-        }
-        for (int isp = 0; isp < NSP; isp++)
-        {
-            for (int ivar = 0; ivar < NCONSRV; ivar++)
+
+            // NIPG项 - 仅对有扩散系数的模型有效
+            if constexpr (std::is_same_v<ConfigType, ConfigLAD>)
             {
-                rhs_tmp[isp][ivar] += rhs_nipg_left[isp][ivar];
-                rhs_tmp[isp][ivar] += rhs_nipg_right[isp][ivar];
+                DataType rhs_nipg_left[NSP][NCONSRV];
+                DataType rhs_nipg_right[NSP][NCONSRV];
+                DataType beta = DataType(-1.0);
+                for (int isp = 0; isp < NSP; isp++)
+                {
+                    for (int ivar = 0; ivar < NCONSRV; ivar++)
+                    {
+                        rhs_nipg_right[isp][ivar] =
+                            DataType(0.5) * beta * config.nu *
+                            (right_bc_u_in[ivar] - right_bc_u_out[ivar]) *
+                            getDMatrix<DataType, ORDER>()[ORDER][isp] / local_det_jac;
+                        rhs_nipg_left[isp][ivar] =
+                            -DataType(0.5) * beta * config.nu *
+                            (left_bc_u_in[ivar] - left_bc_u_out[ivar]) *
+                            getDMatrix<DataType, ORDER>()[0][isp] / local_det_jac;
+                    }
+                }
+                for (int isp = 0; isp < NSP; isp++)
+                {
+                    for (int ivar = 0; ivar < NCONSRV; ivar++)
+                    {
+                        rhs_tmp[isp][ivar] += rhs_nipg_left[isp][ivar];
+                        rhs_tmp[isp][ivar] += rhs_nipg_right[isp][ivar];
+                    }
+                }
             }
         }
     }
@@ -345,14 +380,12 @@ void Solver::computeElemRhsDG(Rhs *rhs_pool, const Element *elem_pool, int iele)
                         getMMatrix<DataType, ORDER>())[isp][jsp] *
                     rhs_tmp[jsp][ivar] / local_det_jac;
             }
-            // if (iele < 3)
-            //     printf("iele=%d,isp=%d,ivar=%d,rhs=%f\n", iele, isp, ivar,
-            //            rhs_pool[iele].rhs[isp][ivar]);
         }
     }
 }
 
-void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
+template <typename ConfigType>
+void Solver<ConfigType>::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
                               const DataType &local_det_jac,
                               DataType (&rhs_predict)[NSP][NCONSRV])
 {
@@ -370,7 +403,8 @@ void Solver::compPredictionLP(const DataType (&flux)[NSP][NCONSRV],
     }
 }
 
-void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
+template <typename ConfigType>
+void Solver<ConfigType>::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
 {
     const Element &element = elem_pool[iele];
     DataType local_det_jac = geom_pool[iele].local_det_jac;
@@ -474,7 +508,8 @@ void Solver::computeElemRhsFR(Rhs *rhs_pool, const Element *elem_pool, int iele)
     }
 }
 
-void Solver::computeRhs(Rhs *rhs_pool, const Element *elem_pool)
+template <typename ConfigType>
+void Solver<ConfigType>::computeRhs(Rhs *rhs_pool, const Element *elem_pool)
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -489,7 +524,8 @@ void Solver::computeRhs(Rhs *rhs_pool, const Element *elem_pool)
     }
 }
 
-void Solver::compGradAndAvg()
+template <typename ConfigType>
+void Solver<ConfigType>::compGradAndAvg()
 {
     for (int iele = 0; iele < config.n_ele; iele++)
     {
@@ -498,7 +534,8 @@ void Solver::compGradAndAvg()
     }
 }
 
-std::pair<DataType, int> Solver::Minmod(DataType a, DataType b, DataType c)
+template <typename ConfigType>
+std::pair<DataType, int> Solver<ConfigType>::Minmod(DataType a, DataType b, DataType c)
 {
     if (a > -1e-6 && a < 1e-6)
         return {DataType(a), 0};
@@ -518,7 +555,8 @@ std::pair<DataType, int> Solver::Minmod(DataType a, DataType b, DataType c)
     return {result, limiter_activated};
 }
 
-void Solver::TvdLimiter()
+template <typename ConfigType>
+void Solver<ConfigType>::TvdLimiter()
 {
     bool islimited[config.n_ele];
     DataType c1[config.n_ele][NCONSRV];
@@ -567,7 +605,8 @@ void Solver::TvdLimiter()
     compGradAndAvg();
 }
 
-void Solver::timeNewExplicitSchemeK1()
+template <typename ConfigType>
+void Solver<ConfigType>::timeNewExplicitSchemeK1()
 {
     // 计算 u*_i
     for (int iele = 0; iele < config.n_ele; iele++)
@@ -634,7 +673,8 @@ void Solver::timeNewExplicitSchemeK1()
           << elem_pool_old[1][0].u_consrv[0][0] << std::endl;
 }
 
-void Solver::timeRK1()
+template <typename ConfigType>
+void Solver<ConfigType>::timeRK1()
 {
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
     for (int iele = 0; iele < config.n_ele; iele++)
@@ -651,7 +691,8 @@ void Solver::timeRK1()
     compGradAndAvg();
 }
 
-void Solver::timeRK2()
+template <typename ConfigType>
+void Solver<ConfigType>::timeRK2()
 {
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
 
@@ -689,7 +730,8 @@ void Solver::timeRK2()
     compGradAndAvg();
 }
 
-void Solver::timeRK3()
+template <typename ConfigType>
+void Solver<ConfigType>::timeRK3()
 {
     computeRhs(rhs_pool_tmp[TORDER], elem_pool_old[TORDER]);
 
@@ -744,7 +786,8 @@ void Solver::timeRK3()
     compGradAndAvg();
 }
 
-void Solver::computeElementGrad(int ielem)
+template <typename ConfigType>
+void Solver<ConfigType>::computeElementGrad(int ielem)
 {
     for (int itp = 0; itp < NTP; itp++)
     {
@@ -767,7 +810,8 @@ void Solver::computeElementGrad(int ielem)
     }
 }
 
-void Solver::ComputeElementAvg(int ielem)
+template <typename ConfigType>
+void Solver<ConfigType>::ComputeElementAvg(int ielem)
 {
     for (int itp = 0; itp < NTP; itp++)
     {
@@ -785,7 +829,8 @@ void Solver::ComputeElementAvg(int ielem)
     }
 }
 
-void Solver::Output(const std::string &filename)
+template <typename ConfigType>
+void Solver<ConfigType>::Output(const std::string &filename)
 {
     if (std::filesystem::exists(filename))
     {
@@ -829,7 +874,8 @@ void Solver::Output(const std::string &filename)
     }
 }
 
-void Solver::OutputAvg(const std::string &filename)
+template <typename ConfigType>
+void Solver<ConfigType>::OutputAvg(const std::string &filename)
 {
     if (std::filesystem::exists(filename))
     {
@@ -859,7 +905,8 @@ void Solver::OutputAvg(const std::string &filename)
     }
 }
 
-void Solver::computeCflDt()
+template <typename ConfigType>
+void Solver<ConfigType>::computeCflDt()
 {
     if (config.cfl <= 0.0)
     {
@@ -887,7 +934,11 @@ void Solver::computeCflDt()
         if (physics->name() == "LAD")
         {
             // 线性平流: lambda = a
-            lambda_max = std::abs(config.a);
+            // 仅对ConfigLAD有效
+            if constexpr (std::is_same_v<ConfigType, ConfigLAD>)
+            {
+                lambda_max = std::abs(config.a);
+            }
         }
         else if (physics->name() == "Burgers")
         {
@@ -910,11 +961,17 @@ void Solver::computeCflDt()
 
         // 扩散项CFL条件: dt <= cfl * dx^2 / (4 * nu)
         // 对于二阶扩散项，显式格式的稳定性条件
-        if (physics->hasDiffusion() && config.nu > 1e-10)
+        if (physics->hasDiffusion())
         {
-            DataType dt_diff = config.cfl * dx * dx / (2.0 * ORDER + 1.0) /
-                               (2.0 * ORDER + 1.0) / config.nu;
-            dt_elem = std::min(dt_elem, dt_diff);
+            if constexpr (std::is_same_v<ConfigType, ConfigLAD>)
+            {
+                if (config.nu > 1e-10)
+                {
+                    DataType dt_diff = config.cfl * dx * dx / (2.0 * ORDER + 1.0) /
+                                       (2.0 * ORDER + 1.0) / config.nu;
+                    dt_elem = std::min(dt_elem, dt_diff);
+                }
+            }
         }
 
         min_dt = std::min(min_dt, dt_elem);
@@ -925,7 +982,8 @@ void Solver::computeCflDt()
               << std::endl;
 }
 
-void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
+template <typename ConfigType>
+void Solver<ConfigType>::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
                               DataType u_grad_bc[NCONSRV]) const
 {
     // bc_pos: -1 = 左边界, +1 = 右边界
@@ -972,7 +1030,6 @@ void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
             {
                 u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
                              elem_right.u_consrv[0][ivar];
-                // u_bc[ivar] = u_b_input[ivar];
                 u_grad_bc[ivar] = elem_right.u_grad_consrv[0][ivar];
             }
         }
@@ -984,9 +1041,13 @@ void Solver::getBoundaryState(int bc_pos, DataType u_bc[NCONSRV],
             {
                 u_bc[ivar] = u_b_input[ivar] * DataType(2.0) -
                              elem_left.u_consrv[ORDER][ivar];
-                // u_bc[ivar] = u_b_input[ivar];
                 u_grad_bc[ivar] = elem_left.u_grad_consrv[ORDER][ivar];
             }
         }
     }
 }
+
+// 显式实例化
+template class Solver<ConfigLAD>;
+template class Solver<ConfigBurgers>;
+template class Solver<ConfigNS>;

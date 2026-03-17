@@ -4,6 +4,13 @@
 #include "macro.h"
 #include "parser.h"
 #include "solver.h"
+#if defined(LAD)
+#include "physics_lad.h"
+#elif defined(BURGERS)
+#include "physics_burgers.h"
+#elif defined(NS)
+#include "physics_ns.h"
+#endif
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -52,6 +59,17 @@ void printConservationIntegral(const char* label, DataType integral[NCONSRV])
     std::cout << "]" << std::endl;
 }
 
+// 根据宏定义选择正确的Config类型
+#if defined(LAD)
+using ConfigType = ConfigLAD;
+#elif defined(BURGERS)
+using ConfigType = ConfigBurgers;
+#elif defined(NS)
+using ConfigType = ConfigNS;
+#else
+#error "Please define one of LAD, BURGERS, or NS"
+#endif
+
 int main(int argc, char **argv)
 {
     std::cout << "running command: ";
@@ -65,12 +83,17 @@ int main(int argc, char **argv)
         std::cout << "usage: exe *.json" << std::endl;
         exit(-1);
     }
-    Config config = nlohmann::loadConfig(argv[1]);
+
+    // 使用模板化的loadConfig函数加载对应类型的配置
+    ConfigType config = nlohmann::loadConfig<ConfigType>(argv[1]);
     nlohmann::json j = config; // 自动序列化
     std::cout << j.dump(4);    // 缩进4格输出，便于阅读
+
     ensurePathExists(config.output_dir);
     ensurePathExists(config.output_dir + "_avg");
-    Solver solver(config, config.n_ele);
+
+    // 使用模板化的Solver
+    Solver<ConfigType> solver(config, config.n_ele);
 
     solver.Initialization();
 
@@ -80,7 +103,7 @@ int main(int argc, char **argv)
     // 输出初始积分值
     DataType integral_init[NCONSRV];
     solver.computeConservationIntegral(integral_init);
-    
+
 
     DataType current_time = 0;
 

@@ -8,12 +8,12 @@
  * @brief 线性平流扩散方程 (Linear Advection Diffusion)
  * u_t + a * u_x = nu * u_xx
  */
-class PhysicsLAD : public PhysicsModel
+class PhysicsLAD : public PhysicsModel<ConfigLAD>
 {
   public:
     // 单点通量计算
     void computeFlux(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                     const Config &config) const override
+                     const ConfigLAD &config) const override
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
@@ -22,7 +22,7 @@ class PhysicsLAD : public PhysicsModel
     }
 
     void computeFluxNormal(const DataType u[NCONSRV], DataType flux[NCONSRV],
-                           const Config &config, DataType normal) const override
+                           const ConfigLAD &config, DataType normal) const override
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
@@ -32,7 +32,7 @@ class PhysicsLAD : public PhysicsModel
 
     void computeRiemannFlux(const DataType uL[NCONSRV],
                             const DataType uR[NCONSRV], DataType flux[NCONSRV],
-                            const Config &config,
+                            const ConfigLAD &config,
                             DataType normal) const override
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
@@ -59,29 +59,13 @@ class PhysicsLAD : public PhysicsModel
     }
 
     void setInitialCondition(DataType u[NSP][NCONSRV], const DataType x[NSP],
-                             const Config &config) const override
+                             const ConfigLAD &config) const override
     {
-        (void)config;
         for (int isp = 0; isp < NSP; isp++)
         {
             for (int ivar = 0; ivar < NCONSRV; ivar++)
             {
-                // u[isp][ivar] = std::sin(2 * acos(-1.0) * x[isp]);
-
                 u[isp][ivar] = config.bc_right;
-
-                // if (x[isp] < DataType(0.25))
-                // {
-                //     u[isp][ivar] = DataType(10.0);
-                // }
-                // else if (x[isp] > DataType(0.75))
-                // {
-                //     u[isp][ivar] = DataType(10.0);
-                // }
-                // else
-                // {
-                //     u[isp][ivar] = DataType(11.0);
-                // }
             }
         }
     }
@@ -92,7 +76,7 @@ class PhysicsLAD : public PhysicsModel
 
     void computeVisFlux(const DataType u[NCONSRV],
                         const DataType u_grad[NCONSRV], DataType flux[NCONSRV],
-                        const Config &config) const override
+                        const ConfigLAD &config) const override
     {
         for (int ivar = 0; ivar < NCONSRV; ivar++)
         {
@@ -106,7 +90,7 @@ class PhysicsLAD : public PhysicsModel
                                const DataType uR[NCONSRV],
                                const DataType uR_grad[NCONSRV],
                                const DataType &length_scale,
-                               DataType flux[NCONSRV], const Config &config,
+                               DataType flux[NCONSRV], const ConfigLAD &config,
                                DataType normal) const override
     {
         // 中心通量: F* = 0.5 * (F_L + F_R)
@@ -127,7 +111,7 @@ class PhysicsLAD : public PhysicsModel
                    DataType local_det_jac_L, DataType local_det_jac_R,
                    DataType flux[NCONSRV], DataType globalLift_L[NSP * NCONSRV],
                    DataType globalLift_R[NSP * NCONSRV],
-                   const Config &config) const override
+                   const ConfigLAD &config) const override
     {
         auto Mass_inv =
             invertMatrix<DataType, ORDER>(getMMatrix<DataType, ORDER>());
@@ -192,7 +176,7 @@ class PhysicsLAD : public PhysicsModel
                                const DataType consrv[NSP][NCONSRV],
                                const DataType local_det_jac,
                                DataType rhs_predict[NSP][NCONSRV],
-                               const Config &config) const override
+                               const ConfigLAD &config) const override
     {
         (void)config;
         (void)consrv;
@@ -240,3 +224,9 @@ class PhysicsLAD : public PhysicsModel
         }
     }
 };
+
+// 工厂函数实现
+inline std::unique_ptr<PhysicsModel<ConfigLAD>> createPhysicsModelLAD()
+{
+    return std::make_unique<PhysicsLAD>();
+}
