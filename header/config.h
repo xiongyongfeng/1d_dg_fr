@@ -19,6 +19,7 @@ enum class CommonFluxType
     ROE = 3,
     AUSM = 4,
     AUSM_PLUS_UP = 5,
+    AUSM_PLUS = 6
 };
 
 /**

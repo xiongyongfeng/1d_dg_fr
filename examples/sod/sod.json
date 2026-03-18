@@ -14,6 +14,6 @@
     "bc_type": 2,
     "bc_left": 0.0,
     "bc_right": 0.0,
-    "common_flux_type": 5,
+    "common_flux_type": 6,
     "output_dir": "./soln_DG_tvdRK1_200"
 }

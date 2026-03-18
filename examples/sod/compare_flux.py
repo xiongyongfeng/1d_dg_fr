@@ -8,7 +8,7 @@ import csv
 base_config = {
     "x0": -5.0,
     "x1": 5.0,
-    "n_ele": 200,
+    "n_ele": 400,
     "total_time": 1.2999999523162842,
     "output_time_step": 0.10000000149011612,
     "cfl": 0.4,
@@ -31,6 +31,7 @@ flux_names = {
     3: "ROE",
     4: "AUSM",
     5: "AUSM+UP",
+    6: "AUSM+",
 }
 
 cases = [
@@ -40,6 +41,7 @@ cases = [
     {"name": "common_flux_3", "common_flux_type": 3, "output_dir": "./soln_flux3"},
     {"name": "common_flux_4", "common_flux_type": 4, "output_dir": "./soln_flux4"},
     {"name": "common_flux_5", "common_flux_type": 5, "output_dir": "./soln_flux5"},
+    {"name": "common_flux_6", "common_flux_type": 6, "output_dir": "./soln_flux6"},
 ]
 
 results = {}
@@ -91,6 +93,7 @@ colors = {
     "common_flux_3": "m",
     "common_flux_4": "c",
     "common_flux_5": "orange",
+    "common_flux_6": "purple",
 }
 
 for case_name, info in results.items():
@@ -167,7 +170,7 @@ axes[2].grid(True, linestyle="--", alpha=0.7)
 axes[2].set_xlim(-5, 5)
 
 fig.suptitle(
-    "Comparison: common_flux_type=0 vs 1 vs 2 vs 3 vs 4 vs 5 (Last Output)", fontsize=14
+    "Comparison: common_flux_type=0 vs 1 vs 2 vs 3 vs 4 vs 5 vs 6 (Last Output)", fontsize=14
 )
 plt.tight_layout()
 plt.savefig("comparison_flux.png", dpi=300)
