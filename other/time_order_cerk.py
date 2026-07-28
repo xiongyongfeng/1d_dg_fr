@@ -1,34 +1,42 @@
+import argparse
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 定义参数
-lambda_val = -1  # λ值
-y0 = 1.0  # 初始条件 y(0)=1
-t0 = 0.0  # 初始时间
-T = 2  # 评估时间点
-# h_list = [
-#     0.05,
-#     0.025,
-#     0.0125,
-#     0.00625,
-#     0.003125,
-#     0.0015625,
-#     0.00078125,
-#     0.000390625,
-# ]  # 步长列表
-h_list = [
-    0.4,
-    0.2,
-    0.1,
-    0.05,
-    0.025,
-    0.0125,
-    0.00625,
-    0.003125,
-    0.0015625,
-    0.00078125,
-    0.000390625,
-]  # 步长列表
+# 默认使用双精度；命令行可通过 --precision float 切换为单精度。
+DTYPE = np.float64
+_GAUSS_CACHE = {}
+
+
+def configure_precision(precision):
+    """设置计算精度并重新创建所有依赖精度的全局参数。"""
+    global DTYPE, lambda_val, y0, t0, T, h_list, log_h
+
+    DTYPE = np.float32 if precision == "float" else np.float64
+    lambda_val = DTYPE(-1.0)
+    y0 = DTYPE(1.0)
+    t0 = DTYPE(0.0)
+    T = DTYPE(2.0)
+    h_list = np.array(
+        [
+            0.4,
+            0.2,
+            0.1,
+            0.05,
+            0.025,
+            0.0125,
+            0.00625,
+            0.003125,
+            0.0015625,
+            0.00078125,
+            0.000390625,
+        ],
+        dtype=DTYPE,
+    )
+    log_h = np.log10(h_list)
+
+
+configure_precision("double")
 
 
 # 定义微分方程 dy/dt = λy
@@ -36,74 +44,93 @@ def lambda_y(t, y):
     return lambda_val * y
 
 
-# 理论解 y(t) = exp(λt)
+# 理论解 y(t) = exp(λt)，使用当前选择的精度
 def exact_solution(t):
-    return np.exp(lambda_val * t)
+    t = np.asarray(t, dtype=DTYPE)
+    return np.exp(lambda_val * t, dtype=DTYPE)
 
 
-# 欧拉向前方法计算在时间T的数值解
+# 欧拉向前方法
 def euler_forward(f, y0, t0, T, h):
-    """
-    使用欧拉向前方法计算在时间T的数值解
-    :param f: 函数f(t, y)
-    :param y0: 初始值
-    :param t0: 初始时间
-    :param T: 目标时间
-    :param h: 步长
-    :return: 在时间T的数值解
-    """
-    t = t0
-    y = y0
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(y)
-    n = int(round((T - t0) / h))  # 计算步数
+    t = DTYPE(t0)
+    y = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [y]
+    n = int(round((T - t0) / h))
     for i in range(n):
         y = y + h * f(t, y)
         t = t + h
         t_seq.append(t)
         y_seq.append(y)
-        # if h == 0.025:
-        #     print(f"t={t},y(t)={y}")
-    return y, t_seq, y_seq
+    return y, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
+# RK4 方法
 def rk4(f, y0, t0, T, h):
-
-    t = t0
-    y = y0
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(y)
-    n = int(round((T - t0) / h))  # 计算步数
+    t = DTYPE(t0)
+    y = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [y]
+    n = int(round((T - t0) / h))
     for i in range(n):
         k1 = f(t, y)
-        k2 = f(t + h / 2, y + k1 * h / 2)
-        k3 = f(t + h / 2, y + k2 * h / 2)
+        k2 = f(t + h / DTYPE(2.0), y + k1 * h / DTYPE(2.0))
+        k3 = f(t + h / DTYPE(2.0), y + k2 * h / DTYPE(2.0))
         k4 = f(t + h, y + h * k3)
-        y = y + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        y = y + h / DTYPE(6.0) * (
+            k1 + DTYPE(2.0) * k2 + DTYPE(2.0) * k3 + k4
+        )
         t = t + h
         t_seq.append(t)
         y_seq.append(y)
-    return y, t_seq, y_seq
+    return y, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
-def cerk2(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b11 = -1 / 2
-    b12 = 1 / 2
-    a21 = 1
+def _integrate_rhs_on_cerk(f, t, un, h, coefficients):
+    """计算 h * integral_0^1 RHS(t_n+theta*h, U_CERK(theta)) dtheta。
 
-    t = t0
-    un = y0
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
+    coefficients=(c0, c1, ...) 表示
+    U_CERK(theta) = un + c0*(theta*h) + c1*(theta*h)**2 + ...。
+    积分采用 Gauss-Legendre 求积；节点数比连续多项式次数多一阶，
+    使求积误差不限制 CERK 守恒格式的时间精度。
+    """
+    quadrature_points = len(coefficients) + 1
+    cache_key = (DTYPE, quadrature_points)
+    if cache_key not in _GAUSS_CACHE:
+        nodes, weights = np.polynomial.legendre.leggauss(quadrature_points)
+        _GAUSS_CACHE[cache_key] = (
+            np.asarray(nodes, dtype=DTYPE),
+            np.asarray(weights, dtype=DTYPE),
+        )
+    nodes, weights = _GAUSS_CACHE[cache_key]
+
+    rhs_integral = DTYPE(0.0)
+    for node, weight in zip(nodes, weights):
+        theta = (node + DTYPE(1.0)) / DTYPE(2.0)
+        tau = theta * h
+        u_cerk = un
+        tau_power = tau
+        for coefficient in coefficients:
+            u_cerk = u_cerk + coefficient * tau_power
+            tau_power *= tau
+        rhs_integral = rhs_integral + weight * f(t + tau, u_cerk)
+
+    return un + h * rhs_integral / DTYPE(2.0)
+
+
+# CERK2
+def cerk2(f, y0, t0, T, h, conservative=False):
+    b01 = DTYPE(1.0)
+    b02 = DTYPE(0.0)
+    b11 = DTYPE(-1.0) / DTYPE(2.0)
+    b12 = DTYPE(1.0) / DTYPE(2.0)
+    a21 = DTYPE(1.0)
+
+    t = DTYPE(t0)
+    un = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [un]
+    n = int(round((T - t0) / h))
     for i in range(n):
         v1 = un
         k1 = f(t, v1)
@@ -111,41 +138,42 @@ def cerk2(f, y0, t0, T, h):
         k2 = f(t, v2)
         c0 = b01 * k1 + b02 * k2
         c1 = (b11 * k1 + b12 * k2) / h
-
-        un = un + c0 * h + c1 * h * h
+        if conservative:
+            un = _integrate_rhs_on_cerk(f, t, un, h, (c0, c1))
+        else:
+            un = un + c0 * h + c1 * h * h
         t = t + h
         t_seq.append(t)
         y_seq.append(un)
-    return un, t_seq, y_seq
+    return un, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
-def cerk4(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b11 = -65 / 48
-    b12 = 529 / 384
-    b13 = 125 / 128
-    b14 = -1
-    b21 = 41 / 72
-    b22 = -529 / 576
-    b23 = -125 / 192
-    b24 = 1
-    a21 = 12 / 23
-    a31 = -68 / 375
-    a32 = 368 / 375
-    a41 = 31 / 144
-    a42 = 529 / 1152  # dimaxer 529/1154  #paper 529/1152
-    a43 = 125 / 384
+# CERK4（paper version）
+def cerk4(f, y0, t0, T, h, conservative=False):
+    b01 = DTYPE(1.0)
+    b02 = DTYPE(0.0)
+    b03 = DTYPE(0.0)
+    b04 = DTYPE(0.0)
+    b11 = DTYPE(-65.0) / DTYPE(48.0)
+    b12 = DTYPE(529.0) / DTYPE(384.0)
+    b13 = DTYPE(125.0) / DTYPE(128.0)
+    b14 = DTYPE(-1.0)
+    b21 = DTYPE(41.0) / DTYPE(72.0)
+    b22 = DTYPE(-529.0) / DTYPE(576.0)
+    b23 = DTYPE(-125.0) / DTYPE(192.0)
+    b24 = DTYPE(1.0)
+    a21 = DTYPE(12.0) / DTYPE(23.0)
+    a31 = DTYPE(-68.0) / DTYPE(375.0)
+    a32 = DTYPE(368.0) / DTYPE(375.0)
+    a41 = DTYPE(31.0) / DTYPE(144.0)
+    a42 = DTYPE(529.0) / DTYPE(1152.0)
+    a43 = DTYPE(125.0) / DTYPE(384.0)
 
-    t = t0
-    un = y0
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
+    t = DTYPE(t0)
+    un = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [un]
+    n = int(round((T - t0) / h))
     for i in range(n):
         v1 = un
         k1 = f(t, v1)
@@ -155,141 +183,66 @@ def cerk4(f, y0, t0, T, h):
         k3 = f(t, v3)
         v4 = un + (a41 * k1 + a42 * k2 + a43 * k3) * h
         k4 = f(t, v4)
-        # c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4
-        # c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4) / h
-        # c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4) / h / h
-
-        # un = un + c0 * h + c1 * h * h + c2 * h * h * h
-        # 等价于
-        un = un + h * (
-            (b01 + b11 + b21) * k1
-            + (b02 + b12 + b22) * k2
-            + (b03 + b13 + b23) * k3
-            + (b04 + b14 + b24) * k4
-        )  # paper
-        # un = un + 1 / 24 * k1 * h + 23 / 24 * k2 * h  # dimaxer
-        un = un + 1 / 24 * k1 * h + 22 / 24 * k2 * h + 1 / 24 * k3 * h  # dimaxer
+        c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4
+        c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4) / h
+        c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4) / (h * h)
+        if conservative:
+            un = _integrate_rhs_on_cerk(f, t, un, h, (c0, c1, c2))
+        else:
+            un = un + c0 * h + c1 * h * h + c2 * h * h * h
         t = t + h
         t_seq.append(t)
         y_seq.append(un)
-        # if h == 0.025:
-        #     print(f"t={t},y(t)={un}")
-    return un, t_seq, y_seq
+    return un, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
-def cerk4_dimaxer(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b11 = -65 / 48
-    b12 = 529 / 384
-    b13 = 125 / 128
-    b14 = -1
-    b21 = 41 / 72
-    b22 = -529 / 576
-    b23 = -125 / 192
-    b24 = 1
-    a21 = 12 / 23
-    a31 = -68 / 375
-    a32 = 368 / 375
-    a41 = 31 / 144
-    a42 = 529 / 1154  # dimaxer 529/1154  #paper 529/1152
-    a43 = 125 / 384
+# CERK6（paper version）
+def cerk6(f, y0, t0, T, h, conservative=False):
+    b01 = DTYPE(1.0)
+    b02 = DTYPE(0.0)
+    b03 = DTYPE(0.0)
+    b04 = DTYPE(0.0)
+    b05 = DTYPE(0.0)
+    b06 = DTYPE(0.0)
+    b11 = DTYPE(-104217.0) / DTYPE(37466.0)
+    b12 = DTYPE(0.0)
+    b13 = DTYPE(861101.0) / DTYPE(230560.0)
+    b14 = DTYPE(-63869.0) / DTYPE(293440.0)
+    b15 = DTYPE(-1522125.0) / DTYPE(762944.0)
+    b16 = DTYPE(165.0) / DTYPE(131.0)
+    b21 = DTYPE(1806901.0) / DTYPE(618189.0)
+    b22 = DTYPE(0.0)
+    b23 = DTYPE(-2178079.0) / DTYPE(380424.0)
+    b24 = DTYPE(6244423.0) / DTYPE(5325936.0)
+    b25 = DTYPE(982125.0) / DTYPE(190736.0)
+    b26 = DTYPE(-461.0) / DTYPE(131.0)
+    b31 = DTYPE(-866577.0) / DTYPE(824252.0)
+    b32 = DTYPE(0.0)
+    b33 = DTYPE(12308679.0) / DTYPE(5072320.0)
+    b34 = DTYPE(-7816583.0) / DTYPE(10144640.0)
+    b35 = DTYPE(-624375.0) / DTYPE(217984.0)
+    b36 = DTYPE(296.0) / DTYPE(131.0)
+    a21 = DTYPE(1.0) / DTYPE(6.0)
+    a31 = DTYPE(44.0) / DTYPE(1369.0)
+    a32 = DTYPE(363.0) / DTYPE(1369.0)
+    a41 = DTYPE(3388.0) / DTYPE(4913.0)
+    a42 = DTYPE(-8349.0) / DTYPE(4913.0)
+    a43 = DTYPE(8140.0) / DTYPE(4913.0)
+    a51 = DTYPE(-36764.0) / DTYPE(408375.0)
+    a52 = DTYPE(767.0) / DTYPE(1125.0)
+    a53 = DTYPE(-32708.0) / DTYPE(136125.0)
+    a54 = DTYPE(210392.0) / DTYPE(408375.0)
+    a61 = DTYPE(1697.0) / DTYPE(18876.0)
+    a62 = DTYPE(0.0)
+    a63 = DTYPE(50653.0) / DTYPE(116160.0)
+    a64 = DTYPE(299693.0) / DTYPE(1626240.0)
+    a65 = DTYPE(3375.0) / DTYPE(11648.0)
 
-    t = t0
-    un = y0
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
-    for i in range(n):
-        v1 = un
-        k1 = f(t, v1)
-        v2 = un + a21 * k1 * h
-        k2 = f(t, v2)
-        v3 = un + (a31 * k1 + a32 * k2) * h
-        k3 = f(t, v3)
-        v4 = un + (a41 * k1 + a42 * k2 + a43 * k3) * h
-        k4 = f(t, v4)
-        # c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4
-        # c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4) / h
-        # c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4) / h / h
-
-        # un = un + c0 * h + c1 * h * h + c2 * h * h * h
-        # 等价于
-        # un = un + h * (
-        #     (b01 + b11 + b21) * k1
-        #     + (b02 + b12 + b22) * k2
-        #     + (b03 + b13 + b23) * k3
-        #     + (b04 + b14 + b24) * k4
-        # )  # paper
-        un = un + 1 / 24 * k1 + 23 / 24 * k2  # dimaxer
-        t = t + h
-        t_seq.append(t)
-        y_seq.append(un)
-        # if h == 0.025:
-        #     print(f"t={t},y(t)={un}")
-    return un, t_seq, y_seq
-
-
-def cerk6(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b05 = 0
-    b06 = 0
-    b11 = -104217 / 37466
-    b12 = 0
-    b13 = 861101 / 230560
-    b14 = -63869 / 293440
-    b15 = -1522125 / 762944
-    b16 = 165 / 131
-    b21 = 1806901 / 618189
-    b22 = 0
-    b23 = -2178079 / 380424
-    b24 = 6244423 / 5325936
-    b25 = 982125 / 190736
-    b26 = -461 / 131
-    b31 = -866577 / 824252
-    b32 = 0
-    b33 = 12308679 / 5072320
-    b34 = -7816583 / 10144640
-    b35 = -624375 / 217984
-    b36 = 296 / 131
-    a21 = 1 / 6
-    a31 = 44 / 1369
-    a32 = 363 / 1369
-    a41 = 3388 / 4913
-    a42 = -8349 / 4913
-    a43 = 8140 / 4913
-    a51 = -36764 / 408375
-    a52 = 767 / 1125
-    a53 = -32708 / 136125
-    a54 = 210392 / 408375
-    a61 = 1697 / 18876  # dimaxer 1697 / 18876   #paper -1697 / 18876
-    a62 = 0
-    a63 = 50653 / 116160
-    a64 = 299693 / 1626240
-    a65 = 3375 / 11648
-
-    print(f"(b01 + b11 + b21 + b31)={b01 + b11 + b21 + b31}")
-    print(f"(b02 + b12 + b22 + b32)={b02 + b12 + b22 + b32}")
-    print(f"(b03 + b13 + b23 + b33)={b03 + b13 + b23 + b33}")
-    print(f"(b04 + b14 + b24 + b34)={b04 + b14 + b24 + b34}")
-    print(f"(b05 + b15 + b25 + b35)={b05 + b15 + b25 + b35}")
-    print(f"(b06 + b16 + b26 + b36)={b06 + b16 + b26 + b36}")
-
-    t_seq = []
-    y_seq = []
-
-    t = t0
-    un = y0
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
+    t = DTYPE(t0)
+    un = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [un]
+    n = int(round((T - t0) / h))
     for i in range(n):
         v1 = un
         k1 = f(t, v1)
@@ -305,216 +258,102 @@ def cerk6(f, y0, t0, T, h):
         k6 = f(t, v6)
         c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4 + b05 * k5 + b06 * k6
         c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4 + b15 * k5 + b16 * k6) / h
-        c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4 + b25 * k5 + b26 * k6) / h / h
-        c3 = (
-            (b31 * k1 + b32 * k2 + b33 * k3 + b34 * k4 + b35 * k5 + b36 * k6)
-            / h
-            / h
-            / h
+        c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4 + b25 * k5 + b26 * k6) / (h * h)
+        c3 = (b31 * k1 + b32 * k2 + b33 * k3 + b34 * k4 + b35 * k5 + b36 * k6) / (
+            h * h * h
         )
-
-        un = un + c0 * h + c1 * h * h + c2 * h * h * h + c3 * h * h * h * h
-        # 等价于
-        # un = un + h * (
-        #     (b01 + b11 + b21 + b31) * k1
-        #     + (b02 + b12 + b22 + b32) * k2
-        #     + (b03 + b13 + b23 + b33) * k3
-        #     + (b04 + b14 + b24 + b34) * k4
-        #     + (b05 + b15 + b25 + b35) * k5
-        #     + (b06 + b16 + b26 + b36) * k6
-        # )  # paper
-
-        # un = un + h * (101 / 363 * k1 - 1369 / 14520 * k3 + 11849 / 14520 * k4) #dimaxer
-
+        if conservative:
+            un = _integrate_rhs_on_cerk(f, t, un, h, (c0, c1, c2, c3))
+        else:
+            un = un + c0 * h + c1 * h * h + c2 * h * h * h + c3 * h * h * h * h
         t = t + h
         t_seq.append(t)
         y_seq.append(un)
-    return un, t_seq, y_seq
+    return un, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
-def cerk6_dimaxer(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b05 = 0
-    b06 = 0
-    b11 = -104217 / 37466
-    b12 = 0
-    b13 = 861101 / 230560
-    b14 = -63869 / 293440
-    b15 = -1522125 / 762944
-    b16 = 165 / 131
-    b21 = 1806901 / 618189
-    b22 = 0
-    b23 = -2178079 / 380424
-    b24 = 6244423 / 5325936
-    b25 = 982125 / 190736
-    b26 = -461 / 131
-    b31 = -866577 / 824252
-    b32 = 0
-    b33 = 12308679 / 5072320
-    b34 = -7816583 / 10144640
-    b35 = -624375 / 217984
-    b36 = 296 / 131
-    a21 = 1 / 6
-    a31 = 44 / 1369
-    a32 = 363 / 1369
-    a41 = 3388 / 4913
-    a42 = -8349 / 4913
-    a43 = 8140 / 4913
-    a51 = -36764 / 408375
-    a52 = 767 / 1125
-    a53 = -32708 / 136125
-    a54 = 210392 / 408375
-    a61 = 1697 / 18876  # dimaxer 1697 / 18876   #paper -1697 / 18876
-    a62 = 0
-    a63 = 50653 / 116160
-    a64 = 299693 / 1626240
-    a65 = 3375 / 11648
+# CERK8（paper version）
+def cerk8(f, y0, t0, T, h, conservative=False):
+    # 系数统一转换为当前选择的精度
+    b01 = DTYPE(1.0)
+    b02 = DTYPE(0.0)
+    b03 = DTYPE(0.0)
+    b04 = DTYPE(0.0)
+    b05 = DTYPE(0.0)
+    b06 = DTYPE(0.0)
+    b07 = DTYPE(0.0)
+    b08 = DTYPE(0.0)
 
-    print(f"(b01 + b11 + b21 + b31)={b01 + b11 + b21 + b31}")
-    print(f"(b02 + b12 + b22 + b32)={b02 + b12 + b22 + b32}")
-    print(f"(b03 + b13 + b23 + b33)={b03 + b13 + b23 + b33}")
-    print(f"(b04 + b14 + b24 + b34)={b04 + b14 + b24 + b34}")
-    print(f"(b05 + b15 + b25 + b35)={b05 + b15 + b25 + b35}")
-    print(f"(b06 + b16 + b26 + b36)={b06 + b16 + b26 + b36}")
+    b11 = DTYPE(-3292.0) / DTYPE(819.0)
+    b12 = DTYPE(0.0)
+    b13 = DTYPE(5112.0) / DTYPE(715.0)
+    b14 = DTYPE(-123.0) / DTYPE(52.0)
+    b15 = DTYPE(-63.0) / DTYPE(52.0)
+    b16 = DTYPE(-40817.0) / DTYPE(33462.0)
+    b17 = DTYPE(18048.0) / DTYPE(5915.0)
+    b18 = DTYPE(-18.0) / DTYPE(13.0)
 
-    t_seq = []
-    y_seq = []
+    b21 = DTYPE(17893.0) / DTYPE(2457.0)
+    b22 = DTYPE(0.0)
+    b23 = DTYPE(-43568.0) / DTYPE(2145.0)
+    b24 = DTYPE(3161.0) / DTYPE(234.0)
+    b25 = DTYPE(1061.0) / DTYPE(234.0)
+    b26 = DTYPE(60025.0) / DTYPE(50193.0)
+    b27 = DTYPE(-637696.0) / DTYPE(53235.0)
+    b28 = DTYPE(75.0) / DTYPE(13.0)
 
-    t = t0
-    un = y0
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
-    for i in range(n):
-        v1 = un
-        k1 = f(t, v1)
-        v2 = un + a21 * k1 * h
-        k2 = f(t, v2)
-        v3 = un + (a31 * k1 + a32 * k2) * h
-        k3 = f(t, v3)
-        v4 = un + (a41 * k1 + a42 * k2 + a43 * k3) * h
-        k4 = f(t, v4)
-        v5 = un + (a51 * k1 + a52 * k2 + a53 * k3 + a54 * k4) * h
-        k5 = f(t, v5)
-        v6 = un + (a61 * k1 + a62 * k2 + a63 * k3 + a64 * k4 + a65 * k5) * h
-        k6 = f(t, v6)
-        c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4 + b05 * k5 + b06 * k6
-        c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4 + b15 * k5 + b16 * k6) / h
-        c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4 + b25 * k5 + b26 * k6) / h / h
-        c3 = (
-            (b31 * k1 + b32 * k2 + b33 * k3 + b34 * k4 + b35 * k5 + b36 * k6)
-            / h
-            / h
-            / h
-        )
+    b31 = DTYPE(-4969.0) / DTYPE(819.0)
+    b32 = DTYPE(0.0)
+    b33 = DTYPE(1344.0) / DTYPE(65.0)
+    b34 = DTYPE(-1465.0) / DTYPE(78.0)
+    b35 = DTYPE(-413.0) / DTYPE(78.0)
+    b36 = DTYPE(2401.0) / DTYPE(1521.0)
+    b37 = DTYPE(96256.0) / DTYPE(5915.0)
+    b38 = DTYPE(-109.0) / DTYPE(13.0)
 
-        # un = un + c0 * h + c1 * h * h + c2 * h * h * h + c3 * h * h * h * h
-        # 等价于
-        # un = un + h * (
-        #     (b01 + b11 + b21 + b31) * k1
-        #     + (b02 + b12 + b22 + b32) * k2
-        #     + (b03 + b13 + b23 + b33) * k3
-        #     + (b04 + b14 + b24 + b34) * k4
-        #     + (b05 + b15 + b25 + b35) * k5
-        #     + (b06 + b16 + b26 + b36) * k6
-        # )  # paper
+    b41 = DTYPE(596.0) / DTYPE(315.0)
+    b42 = DTYPE(0.0)
+    b43 = DTYPE(-1984.0) / DTYPE(275.0)
+    b44 = DTYPE(118.0) / DTYPE(15.0)
+    b45 = DTYPE(2.0)
+    b46 = DTYPE(-9604.0) / DTYPE(6435.0)
+    b47 = DTYPE(-48128.0) / DTYPE(6825.0)
+    b48 = DTYPE(4.0)
 
-        un = un + h * (
-            101 / 363 * k1 - 1369 / 14520 * k3 + 11849 / 14520 * k4
-        )  # dimaxer
+    a21 = DTYPE(1.0) / DTYPE(6.0)
+    a31 = DTYPE(1.0) / DTYPE(16.0)
+    a32 = DTYPE(3.0) / DTYPE(16.0)
+    a41 = DTYPE(1.0) / DTYPE(4.0)
+    a42 = DTYPE(-3.0) / DTYPE(4.0)
+    a43 = DTYPE(1.0)
+    a51 = DTYPE(-3.0) / DTYPE(4.0)
+    a52 = DTYPE(15.0) / DTYPE(4.0)
+    a53 = DTYPE(-3.0)
+    a54 = DTYPE(1.0) / DTYPE(2.0)
+    a61 = DTYPE(369.0) / DTYPE(1372.0)
+    a62 = DTYPE(-243.0) / DTYPE(343.0)
+    a63 = DTYPE(297.0) / DTYPE(343.0)
+    a64 = DTYPE(1485.0) / DTYPE(9604.0)
+    a65 = DTYPE(297.0) / DTYPE(4802.0)
+    a71 = DTYPE(-133.0) / DTYPE(4512.0)
+    a72 = DTYPE(1113.0) / DTYPE(6016.0)
+    a73 = DTYPE(7945.0) / DTYPE(16544.0)
+    a74 = DTYPE(-12845.0) / DTYPE(24064.0)
+    a75 = DTYPE(-315.0) / DTYPE(24064.0)
+    a76 = DTYPE(156065.0) / DTYPE(198528.0)
+    a81 = DTYPE(83.0) / DTYPE(945.0)
+    a82 = DTYPE(0.0)
+    a83 = DTYPE(248.0) / DTYPE(825.0)
+    a84 = DTYPE(41.0) / DTYPE(180.0)
+    a85 = DTYPE(1.0) / DTYPE(36.0)
+    a86 = DTYPE(2401.0) / DTYPE(38610.0)
+    a87 = DTYPE(6016.0) / DTYPE(20475.0)
 
-        t = t + h
-        t_seq.append(t)
-        y_seq.append(un)
-    return un, t_seq, y_seq
-
-
-def cerk8(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b05 = 0
-    b06 = 0
-    b07 = 0
-    b08 = 0
-
-    b11 = -3292 / 819
-    b12 = 0
-    b13 = 5112 / 715
-    b14 = -123 / 52
-    b15 = -63 / 52
-    b16 = -40817 / 33462
-    b17 = 18048 / 5915
-    b18 = -18 / 13
-
-    b21 = 17893 / 2457
-    b22 = 0
-    b23 = -43568 / 2145
-    b24 = 3161 / 234
-    b25 = 1061 / 234
-    b26 = 60025 / 50193
-    b27 = -637696 / 53235
-    b28 = 75 / 13
-
-    b31 = -4969 / 819
-    b32 = 0
-    b33 = 1344 / 65
-    b34 = -1465 / 78
-    b35 = -413 / 78
-    b36 = 2401 / 1521
-    b37 = 96256 / 5915
-    b38 = -109 / 13
-
-    b41 = 596 / 315
-    b42 = 0
-    b43 = -1984 / 275
-    b44 = 118 / 15
-    b45 = 2
-    b46 = -9604 / 6435
-    b47 = -48128 / 6825
-    b48 = 4
-
-    a21 = 1 / 6
-    a31 = 1 / 16
-    a32 = 3 / 16
-    a41 = 1 / 4
-    a42 = -3 / 4
-    a43 = 1
-    a51 = -3 / 4
-    a52 = 15 / 4
-    a53 = -3
-    a54 = 1 / 2
-    a61 = 369 / 1372
-    a62 = -243 / 343
-    a63 = 297 / 343
-    a64 = 1485 / 9604
-    a65 = 297 / 4802
-    a71 = -133 / 4512
-    a72 = 1113 / 6016
-    a73 = 7945 / 16544
-    a74 = -12845 / 24064
-    a75 = -315 / 24064
-    a76 = 156065 / 198528
-    a81 = 83 / 945
-    a82 = 0
-    a83 = 248 / 825
-    a84 = 41 / 180
-    a85 = 1 / 36
-    a86 = 2401 / 38610
-    a87 = 6016 / 20475
-
-    t_seq = []
-    y_seq = []
-
-    t = t0
-    un = y0
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
+    t = DTYPE(t0)
+    un = DTYPE(y0)
+    t_seq = [t]
+    y_seq = [un]
+    n = int(round((T - t0) / h))
     for i in range(n):
         v1 = un
         k1 = f(t, v1)
@@ -544,6 +383,7 @@ def cerk8(f, y0, t0, T, h):
             * h
         )
         k8 = f(t, v8)
+
         c0 = (
             b01 * k1
             + b02 * k2
@@ -565,309 +405,161 @@ def cerk8(f, y0, t0, T, h):
             + b18 * k8
         ) / h
         c2 = (
-            (
-                b21 * k1
-                + b22 * k2
-                + b23 * k3
-                + b24 * k4
-                + b25 * k5
-                + b26 * k6
-                + b27 * k7
-                + b28 * k8
-            )
-            / h
-            / h
-        )
+            b21 * k1
+            + b22 * k2
+            + b23 * k3
+            + b24 * k4
+            + b25 * k5
+            + b26 * k6
+            + b27 * k7
+            + b28 * k8
+        ) / (h * h)
         c3 = (
-            (
-                b31 * k1
-                + b32 * k2
-                + b33 * k3
-                + b34 * k4
-                + b35 * k5
-                + b36 * k6
-                + b37 * k7
-                + b38 * k8
-            )
-            / h
-            / h
-            / h
-        )
+            b31 * k1
+            + b32 * k2
+            + b33 * k3
+            + b34 * k4
+            + b35 * k5
+            + b36 * k6
+            + b37 * k7
+            + b38 * k8
+        ) / (h * h * h)
         c4 = (
-            (
-                b41 * k1
-                + b42 * k2
-                + b43 * k3
-                + b44 * k4
-                + b45 * k5
-                + b46 * k6
-                + b47 * k7
-                + b48 * k8
+            b41 * k1
+            + b42 * k2
+            + b43 * k3
+            + b44 * k4
+            + b45 * k5
+            + b46 * k6
+            + b47 * k7
+            + b48 * k8
+        ) / (h * h * h * h)
+
+        if conservative:
+            un = _integrate_rhs_on_cerk(f, t, un, h, (c0, c1, c2, c3, c4))
+        else:
+            un = (
+                un
+                + c0 * h
+                + c1 * h * h
+                + c2 * h * h * h
+                + c3 * h * h * h * h
+                + c4 * h * h * h * h * h
             )
-            / h
-            / h
-            / h
-            / h
-        )
-
-        un = (
-            un
-            + c0 * h
-            + c1 * h * h
-            + c2 * h * h * h
-            + c3 * h * h * h * h
-            + c4 * h * h * h * h * h
-        )
-        # 等价于
-        # un = un + h * (
-        #     (b01 + b11 + b21 + b31) * k1
-        #     + (b02 + b12 + b22 + b32) * k2
-        #     + (b03 + b13 + b23 + b33) * k3
-        #     + (b04 + b14 + b24 + b34) * k4
-        #     + (b05 + b15 + b25 + b35) * k5
-        #     + (b06 + b16 + b26 + b36) * k6
-        # )  # paper
-
         t = t + h
         t_seq.append(t)
         y_seq.append(un)
-    return un, t_seq, y_seq
+    return un, np.array(t_seq, dtype=DTYPE), np.array(y_seq, dtype=DTYPE)
 
 
+def cerk2_cons(f, y0, t0, T, h):
+    return cerk2(f, y0, t0, T, h, conservative=True)
+
+
+def cerk4_cons(f, y0, t0, T, h):
+    return cerk4(f, y0, t0, T, h, conservative=True)
+
+
+def cerk6_cons(f, y0, t0, T, h):
+    return cerk6(f, y0, t0, T, h, conservative=True)
+
+
+def cerk8_cons(f, y0, t0, T, h):
+    return cerk8(f, y0, t0, T, h, conservative=True)
+
+
+# 时间阶分析
 def time_order_analysis(time_scheme):
     errors = []
-    u_seq = []
-    t_seq = []
+    u_seq_all = []
+    t_seq_all = []
     for h in h_list:
-        y_numerical, t_seq_hi, u_seq_hi = time_scheme(lambda_y, y0, t0, T, h)
-        t_seq.append(t_seq_hi)
-        u_seq.append(u_seq_hi)
+        y_num, t_seq, u_seq = time_scheme(lambda_y, y0, t0, T, h)
+        t_seq_all.append(t_seq)
+        u_seq_all.append(u_seq)
         y_exact = exact_solution(T)
-        # y_exact = exact_solution(NSTEP * h)
-        error = abs(y_numerical - y_exact)
+        error = np.abs(y_num - y_exact)
         errors.append(error)
 
-    log_errors = np.log10(errors)
+    error_array = np.array(errors, dtype=DTYPE)
+    log_errors = np.full(error_array.shape, np.nan, dtype=DTYPE)
+    positive = error_array > 0
+    log_errors[positive] = np.log10(error_array[positive])
+    finite = np.isfinite(log_errors)
+    coefficients = np.polyfit(log_h[finite], log_errors[finite], 1)
 
-    index = 0
-    order = 0
-    for h, error in zip(h_list, errors):
-        if index > 0:
-            order = (log_errors[index] - log_errors[index - 1]) / (
-                log_h[index] - log_h[index - 1]
-            )
-        print(
-            f"h = {h:.6f}, error = {error:.6e}, order = {order:.6e}, exact={exact_solution(T)}"
-        )
-        index = index + 1
+    # 打印收敛阶
+    print(f"h = {h_list[0]:.6f}, error = {errors[0]:.6e}")
+    for i in range(1, len(h_list)):
+        if finite[i] and finite[i - 1]:
+            order = (log_errors[i] - log_errors[i - 1]) / (log_h[i] - log_h[i - 1])
+            order_text = f"{order:.4f}"
+        else:
+            order_text = "precision limit"
+        print(f"h = {h_list[i]:.6f}, error = {errors[i]:.6e}, order ≈ {order_text}")
 
-    coefficients = np.polyfit(log_h, log_errors, 1)
-
-    return errors, log_errors, coefficients, t_seq, u_seq
-
-
-def cerk4_continuous(f, y0, t0, T, h):
-    b01 = 1
-    b02 = 0
-    b03 = 0
-    b04 = 0
-    b11 = -65 / 48
-    b12 = 529 / 384
-    b13 = 125 / 128
-    b14 = -1
-    b21 = 41 / 72
-    b22 = -529 / 576
-    b23 = -125 / 192
-    b24 = 1
-    a21 = 12 / 23
-    a31 = -68 / 375
-    a32 = 368 / 375
-    a41 = 31 / 144
-    a42 = 529 / 1152  # dimaxer 529/1154  #paper 529/1152
-    a43 = 125 / 384
-
-    t = t0
-    un = y0
-
-    t_last_time_step_seq = []
-    y_last_time_step_seq = []
-    y_seq = []
-    t_seq = []
-    y_seq = []
-    t_seq.append(t)
-    y_seq.append(un)
-    n = int(round((T - t0) / h))  # 计算步数
-    for i in range(n):
-        v1 = un
-        k1 = f(t, v1)
-        v2 = un + a21 * k1 * h
-        k2 = f(t, v2)
-        v3 = un + (a31 * k1 + a32 * k2) * h
-        k3 = f(t, v3)
-        v4 = un + (a41 * k1 + a42 * k2 + a43 * k3) * h
-        k4 = f(t, v4)
-        c0 = b01 * k1 + b02 * k2 + b03 * k3 + b04 * k4
-        c1 = (b11 * k1 + b12 * k2 + b13 * k3 + b14 * k4) / h
-        c2 = (b21 * k1 + b22 * k2 + b23 * k3 + b24 * k4) / h / h
-
-        if i == n - 1:
-            ratio = np.linspace(0, 1, 101)
-            for r in ratio:
-                t_last_time_step_seq.append(t + h * r)
-                u_r = un + c0 * r * h + c1 * r * r * h * h + c2 * r * r * r * h * h * h
-                y_last_time_step_seq.append(u_r)
-
-        # un = un + c0 * h + c1 * h * h + c2 * h * h * h
-        # 等价于
-        un = un + h * (
-            (b01 + b11 + b21) * k1
-            + (b02 + b12 + b22) * k2
-            + (b03 + b13 + b23) * k3
-            + (b04 + b14 + b24) * k4
-        )  # paper
-        # un = un + 1 / 24 * k1 + 23 / 24 * k2  # dimaxer
-        t = t + h
-        t_seq.append(t)
-        y_seq.append(un)
-
-    return t_last_time_step_seq, y_last_time_step_seq
+    return errors, log_errors, coefficients, t_seq_all, u_seq_all
 
 
+# 主程序
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="CERK 时间阶与精度分析")
+    parser.add_argument(
+        "--precision",
+        choices=("float", "double"),
+        default="double",
+        help="计算精度：float=float32，double=float64（默认）",
+    )
+    args = parser.parse_args()
+    configure_precision(args.precision)
 
-    log_h = np.log10(h_list)
-
+    print(f"Precision: {args.precision} ({DTYPE.__name__})")
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-    print("\nEuler forward:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(euler_forward)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "ko-",
-        label=f"euler forward error (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(
-        t_seq[0],
-        u_seq[0],
-        "k-",
-        label=f"euler forward error (slope = {coefficients[0]:.4f})",
-    )
+    schemes = [
+        (euler_forward, "Euler forward", "ko-", "k-"),
+        (rk4, "RK4", "ro-", "r-"),
+        (cerk2, "CERK2", "bo-", "b-"),
+        (cerk2_cons, "CERK2-cons", "b^--", "b--"),
+        (cerk4, "CERK4", "go--", "g--"),
+        (cerk4_cons, "CERK4-cons", "g^:", "g:"),
+        (cerk6, "CERK6", "mo-.", "m-."),
+        (cerk6_cons, "CERK6-cons", "m^--", "m--"),
+        (cerk8, "CERK8", "co:", "c:"),
+        (cerk8_cons, "CERK8-cons", "c^--", "c--"),
+    ]
 
-    print("\n RK4:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(rk4)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "ro-",
-        label=f"RK4 (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(t_seq[0], u_seq[0], "r-", label=f"RK4 (slope = {coefficients[0]:.4f})")
+    for method, name, marker_style, line_style in schemes:
+        print(f"\n{name}:")
+        errors, log_errors, coeff, t_seqs, u_seqs = time_order_analysis(method)
+        slope = coeff[0]
+        ax1.plot(
+            log_h,
+            log_errors,
+            marker_style,
+            label=f"{name} (slope={slope:.2f})",
+            markersize=6,
+        )
+        # 绘制最粗网格的解（第一个 h）
+        ax2.plot(t_seqs[0], u_seqs[0], line_style, label=f"{name}")
 
-    print("\n CERK2:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk2)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "bo-",
-        label=f"CERK2 (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(t_seq[0], u_seq[0], "b-", label=f"CERK2 (slope = {coefficients[0]:.4f})")
+    # 精确解（用于对比）
+    t_fine = np.linspace(t0, T, 200, dtype=DTYPE)
+    y_exact_fine = exact_solution(t_fine)
+    ax2.plot(t_fine, y_exact_fine, "k:", linewidth=1.5, label="Exact")
 
-    print("\n CERK4:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk4)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "ob--",
-        label=f"CERK4 (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(t_seq[1], u_seq[1], "b--", label=f"CERK4 (slope = {coefficients[0]:.4f})")
-
-    # CHECK
-    # print("\n CERK4-Dimaxer:")
-    # errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk4_dimaxer)
-    # ax1.plot(
-    #     log_h,
-    #     log_errors,
-    #     "og--",
-    #     label=f"CERK4-Dimaxer (slope = {coefficients[0]:.4f})",
-    #     markersize=8,
-    # )
-    # ax2.plot(
-    #     t_seq[1],
-    #     u_seq[1],
-    #     "g--",
-    #     label=f"CERK4-Dimaxer (slope = {coefficients[0]:.4f})",
-    # )
-
-    print("\n CERK6:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk6)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "ob-.",
-        label=f"CERK6 (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(t_seq[0], u_seq[0], "b-.", label=f"CERK6 (slope = {coefficients[0]:.4f})")
-
-    # print("\n CERK6-Dimaxer:")
-    # errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk6_dimaxer)
-    # ax1.plot(
-    #     log_h,
-    #     log_errors,
-    #     "go-.",
-    #     label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
-    #     markersize=8,
-    # )
-    # ax2.plot(
-    #     t_seq[0],
-    #     u_seq[0],
-    #     "g-.",
-    #     label=f"CERK6-Dimaxer (slope = {coefficients[0]:.4f})",
-    # )
-
-    print("\n CERK8:")
-    errors, log_errors, coefficients, t_seq, u_seq = time_order_analysis(cerk8)
-    ax1.plot(
-        log_h,
-        log_errors,
-        "ob:",
-        label=f"CERK8 (slope = {coefficients[0]:.4f})",
-        markersize=8,
-    )
-    ax2.plot(t_seq[0], u_seq[0], "b:", label=f"CERK8 (slope = {coefficients[0]:.4f})")
-
-    ax1.set_xlabel("log(h)")
-    ax1.set_ylabel("log(error)")
-    ax1.set_title("(log-log)")
-    # ax1.legend()
-    # ax1.set_aspect(1)
-    ax1.grid(True, which="both", ls="--")
+    ax1.set_xlabel("log₁₀(h)")
+    ax1.set_ylabel("log₁₀(error)")
+    ax1.set_title("Convergence (log-log)")
+    ax1.grid(True, ls="--", alpha=0.7)
 
     ax2.set_xlabel("t")
     ax2.set_ylabel("y(t)")
-    ax2.set_title("y-t")
-    # ax2.legend()
-    ax2.grid(True, which="both", ls="--")
-    ax1.set_aspect(0.1, adjustable="box")
+    ax2.set_title(f"Numerical Solutions (h={h_list[0]:g})")
+    ax2.grid(True, ls="--", alpha=0.7)
 
-    fig.legend(
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0),  # 在图形正下方
-        ncol=4,  # 4列布局
-        fontsize=9,
-        frameon=True,
-        framealpha=0.95,
-        edgecolor="gray",
-        title="legend",
-        title_fontsize=10,
-    )
-    # plt.tight_layout()
-    plt.tight_layout(rect=[0, 0.25, 1, 1])
-    plt.savefig("time_order_cerk.png", dpi=300)
+    fig.legend(loc="lower center", bbox_to_anchor=(0.5, 0.02), ncol=3, fontsize=9)
+    plt.tight_layout(rect=[0, 0.15, 1, 1])
+    output_file = f"time_order_cerk_{args.precision}.png"
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"\nSaved: {output_file}")
