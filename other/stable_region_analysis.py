@@ -126,6 +126,44 @@ def stable_region_TSRK23_lsh(Z):
     return stable_region, abs_rho1, abs_rho2
 
 
+def stable_region_2step2stage_v2_lsh(Z):
+    omega = 1 / 1
+    alpha = 1 / omega
+    theta = 1
+
+    a1 = -alpha
+    a2 = np.sqrt(2) + alpha
+
+    b11 = 0
+    b12 = -alpha * a1 / ((a1 - a2))
+    b13 = -alpha * (a1 + a2) * alpha / (3 * (a1 - a2))
+    b21 = 1
+    b22 = (3 + 6 * a1 * alpha) / (6 * (a1 - a2))
+    b23 = 2 * alpha * (1 + (a1 + a2) * alpha) / (6 * (a1 - a2))
+    b31 = 0
+    b32 = -1 / (2 * (a1 - a2))
+    b33 = -alpha / (3 * (a1 - a2))
+
+    B_z = (
+        1
+        + Z * (b21 * theta + b22 * theta * theta + b23 * theta * theta * theta)
+        + (b31 * theta + b32 * theta * theta + b33 * theta * theta * theta)
+        * Z
+        * (1 + a2 * Z)
+    )
+    A_z = (
+        Z * (b11 * theta + b12 * theta * theta + b13 * theta * theta * theta)
+        + (b31 * theta + b32 * theta * theta + b33 * theta * theta * theta) * Z * a1 * Z
+    )
+    rho1 = (B_z + np.sqrt(B_z * B_z + 4.0 * A_z)) / 2.0
+    rho2 = (B_z - np.sqrt(B_z * B_z + 4.0 * A_z)) / 2.0
+
+    abs_rho1 = np.abs(rho1)
+    abs_rho2 = np.abs(rho2)
+    stable_region = (abs_rho1 < 1.0) & (abs_rho2 < 1.0)
+    return stable_region, abs_rho1, abs_rho2
+
+
 def stable_region_IMTSRK22(Z):
     # IMTSRK22
     omega = 1 / 1.0  # time ratio
@@ -673,13 +711,26 @@ def two_step_two_stage():
     stableregion_TSRK23_lsh, abs_rho1_TSRK23_lsh, abs_rho2_TSRK23_lsh = (
         stable_region_TSRK23_lsh(Z)
     )
+    (
+        stableregion_2step2stagev2_lsh,
+        abs_rho1_2step2stagev2_lsh,
+        abs_rho2_2step2stagev2_lsh,
+    ) = stable_region_2step2stage_v2_lsh(Z)
 
     # 绘制图形
     plt.figure(figsize=(10, 10))
 
-    plt.contourf(X, Y, stableregion_TSRK23, levels=[0.5, 1.5], colors="cyan", alpha=0.8)
+    # plt.contourf(X, Y, stableregion_TSRK23, levels=[0.5, 1.5], colors="cyan", alpha=0.8)
+    # plt.contourf(
+    #     X, Y, stableregion_TSRK23_lsh, levels=[0.5, 1.5], colors="orange", alpha=0.8
+    # )
     plt.contourf(
-        X, Y, stableregion_TSRK23_lsh, levels=[0.5, 1.5], colors="orange", alpha=0.8
+        X,
+        Y,
+        stableregion_2step2stagev2_lsh,
+        levels=[0.5, 1.5],
+        colors="pink",
+        alpha=0.8,
     )
 
     plt.contour(X, Y, abs_rho_RK4, levels=[1], colors="red", linewidths=2)
@@ -711,14 +762,19 @@ def two_step_two_stage():
         [], [], color="orange", linewidth=2, label="TSRK23_time_growth_ratio2"
     )
 
+    two_step_two_stage_v2 = mlines.Line2D(
+        [], [], color="pink", linewidth=2, label="2step2stage_v2"
+    )
+
     # 添加图例
     plt.legend(
         handles=[
             classical_rk4,
             euler,
             cerk4,
-            TSRK23_time_growth_ratio1,
-            TSRK23_time_growth_ratio1_25,
+            # TSRK23_time_growth_ratio1,
+            # TSRK23_time_growth_ratio1_25,
+            two_step_two_stage_v2,
         ],
         loc="best",
         fontsize=10,
